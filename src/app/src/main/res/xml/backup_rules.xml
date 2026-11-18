@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API <31 的云备份规则：聊天数据（WebView/IndexedDB）允许备份，
+     但密文密钥存储文件绝不进入备份（明文密钥按设计永不落盘）。 -->
+<full-backup-content>
+    <exclude
+        domain="sharedpref"
+        path="secure_key_store.xml" />
+</full-backup-content>

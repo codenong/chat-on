@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>帮助：申请 API Key 与充值</title>
+  <link rel="stylesheet" href="help.css" />
+</head>
+<body>
+<main>
+  <div class="back"><button class="back-btn" onclick="history.back()">← 返回</button></div>
+  <h1>申请 API Key 与充值</h1>
+
+  <div class="warn">
+    <strong>DeepSeek 网页聊天和 DeepSeek API 是两项不同的服务。</strong>
+    网页端可以免费聊天，不代表 API 调用免费；网页端会员或权益也不等于 API 余额。
+  </div>
+
+  <h2>一、登录开放平台</h2>
+  <p>API Key 不是网页聊天密码，也不是短信验证码，它是给程序调用 API 使用的密钥。</p>
+  <ol>
+    <li>打开 <a href="https://platform.deepseek.com/">platform.deepseek.com</a>。</li>
+    <li>使用页面提供的注册或登录方式进入平台，并完成账号验证。</li>
+    <li>登录后检查 API 账户状态、余额和 API Keys 管理入口。</li>
+  </ol>
+  <p>如果你只有网页聊天账号，不要假定 API 账户已有余额，以开放平台的 API 账户页面为准。</p>
+
+  <h2>二、给 API 账户充值</h2>
+  <ol>
+    <li>登录开放平台，进入账户余额、费用管理或充值相关页面。</li>
+    <li>查看当前支持的支付方式、币种、最低充值金额和地区限制。</li>
+    <li>按页面提示选择金额并完成付款，付款后回到余额页面确认到账。</li>
+  </ol>
+  <ul>
+    <li>网页聊天服务与 API 服务分开计费，网页端权益不能当作 API 余额。</li>
+    <li>不要通过陌生个人、社交群或非官方链接购买所谓 API Key 或额度。</li>
+    <li>不要向任何人提供平台密码、短信验证码或完整 API Key。</li>
+  </ul>
+
+  <h2>三、创建 API Key</h2>
+  <ol>
+    <li>在开放平台找到「API Keys」或「API 密钥」页面。</li>
+    <li>点击「创建 API Key」，给 Key 起一个便于辨认的名称（名称只是备注）。</li>
+    <li>创建后平台会显示一串密钥，<strong>立即复制并妥善保存</strong>；
+      出于安全原因，密钥可能只在创建时完整显示一次。</li>
+  </ol>
+  <div class="warn">
+    请勿把 Key 发给 App 客服或开发者、粘贴到公开评论或群聊、截图发给别人，
+    也不要把网页登录密码误当成 API Key。
+  </div>
+  <p>
+    <strong>Key 丢了怎么办？</strong>回到开放平台撤销或删除旧 Key，再创建新的；
+    在本 App 的「设置 / 更换 API Key」中粘贴新 Key 即可。不要尝试找回已无法查看的旧 Key。
+  </p>
+
+  <h2>四、费用是怎样产生的？</h2>
+  <p>
+    DeepSeek API 通常按 token 计费：输入 token 包括本轮问题、系统提示和实际随请求发送的
+    历史上下文；输出 token 是模型生成的回答。长对话的输入上下文更多，消耗额度也更多。
+  </p>
+  <p>
+    导入很长的历史记录，不代表每次请求都会把所有历史全部发送给模型；客户端受上下文窗口
+    和上下文组织策略限制。
+  </p>
+  <ul>
+    <li>查看最新价格：<a href="https://api-docs.deepseek.com/quick_start/pricing/">api-docs.deepseek.com/quick_start/pricing</a></li>
+    <li>查看账户用量和账单：<a href="https://platform.deepseek.com/">platform.deepseek.com</a></li>
+  </ul>
+  <p>不要根据旧教程、网络截图或过期文章估算费用；模型名称、价格和计费规则可能变化。</p>
+
+  <footer>本页面内容截至 2026-11-18，以 DeepSeek 开放平台及官方文档当前显示为准。本 App 不代收 API 费用。</footer>
+</main>
+</body>
+</html>
