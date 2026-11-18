@@ -14,8 +14,8 @@ android {
         // WebView 本体需设备上较新的 System WebView（Play 通道自动更新）。
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 6
+        versionName = "0.1.5"
         resourceConfigurations += listOf("zh", "en")
     }
 
@@ -43,6 +43,12 @@ android {
     buildFeatures {
         buildConfig = true
     }
+    testOptions {
+        // 单测中 android.* 桩方法（如 Log.i）返回默认值而非抛异常
+        unitTests {
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {
@@ -54,4 +60,6 @@ dependencies {
     implementation("androidx.webkit:webkit:1.12.1")
 
     testImplementation("junit:junit:4.13.2")
+    // 单测中使用真实 org.json 实现（android.jar 桩不可用）
+    testImplementation("org.json:json:20240303")
 }

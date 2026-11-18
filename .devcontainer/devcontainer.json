@@ -1,0 +1,7 @@
+{
+  "name": "Android",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/android:1": {}
+  }
+}

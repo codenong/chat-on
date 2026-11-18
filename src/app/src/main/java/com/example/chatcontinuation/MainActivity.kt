@@ -1,11 +1,15 @@
 package com.example.chatcontinuation
 
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.webkit.WebViewCompat
 import com.example.chatcontinuation.backup.BackupManager
@@ -39,6 +43,16 @@ class MainActivity : AppCompatActivity(), ShellUi {
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    /** 页面内官方导入按钮（隐藏 <input type="file"> 触发 click）的进行中回调。 */
+    private var pendingFileChooser: ValueCallback<Array<Uri>>? = null
+
+    private val fileChooserLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            val callback = pendingFileChooser
+            pendingFileChooser = null
+            callback?.onReceiveValue(uri?.let { arrayOf(it) })
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -60,6 +74,9 @@ class MainActivity : AppCompatActivity(), ShellUi {
         webView = findViewById(R.id.web_view)
         WebViewConfig.configureSettings(webView)
         webView.webViewClient = WebViewConfig.createClient(applicationContext, assetLoader, this)
+        // 页面内官方「导入聊天记录」按钮点击隐藏 input 时回调这里；
+        // 不实现则官方按钮点击无任何反应（WebView 默认无文件选择能力）
+        webView.webChromeClient = fileChooserClient()
         try {
             WebViewCompat.addWebMessageListener(
                 webView,
@@ -104,6 +121,37 @@ class MainActivity : AppCompatActivity(), ShellUi {
         })
     }
 
+    /**
+     * 页面内官方「导入聊天记录」按钮会对隐藏 <input type="file"> 调 click()，
+     * Chromium 回调 onShowFileChooser；这里桥接到系统 SAF 选择器，把用户选的
+     * ZIP 以 content:// 返回给页面官方导入器（不申请任何存储权限）。
+     */
+    private fun fileChooserClient(): WebChromeClient =
+        object : WebChromeClient() {
+            override fun onShowFileChooser(
+                webView: WebView?,
+                filePathCallback: ValueCallback<Array<Uri>>,
+                fileChooserParams: WebChromeClient.FileChooserParams
+            ): Boolean {
+                // 上一次选择未完成时先作废其回调，避免 WebView 侧永久挂起
+                pendingFileChooser?.onReceiveValue(null)
+                pendingFileChooser = filePathCallback
+                val accept = fileChooserParams.acceptTypes
+                    ?.filter { it.isNotBlank() && it.contains("/") }
+                    ?.toSet()
+                    ?.ifEmpty { setOf("application/zip", "application/x-zip-compressed") }
+                    ?: setOf("application/zip", "application/x-zip-compressed")
+                return try {
+                    fileChooserLauncher.launch(accept.toTypedArray() + "application/octet-stream")
+                    true
+                } catch (t: Throwable) {
+                    pendingFileChooser = null
+                    LogRedactor.w(TAG, "file chooser launch failed: ${t.javaClass.simpleName}")
+                    false
+                }
+            }
+        }
+
     private fun handleMenuItem(itemId: Int): Boolean = when (itemId) {
         R.id.action_setup_key -> {
             showKeySetupDialog(); true
@@ -136,7 +184,8 @@ class MainActivity : AppCompatActivity(), ShellUi {
 
     override fun toast(message: String) {
         mainHandler.post {
-            Toast.makeText(applicationContext, message, Toast.LENGTH_SHORT).show()
+            // LENGTH_LONG：导入/备份提示多为多步引导，短时 Toast 用户来不及读完
+            Toast.makeText(applicationContext, message, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -147,6 +196,15 @@ class MainActivity : AppCompatActivity(), ShellUi {
 
     override fun showKeySetupDialog() {
         KeySetupDialog.show(this, secureKeyStore) { onKeyChanged() }
+    }
+
+    /** 导入入口未打开：完整指引（暂存等待 + 页面设置路径 + 页面内按钮替代路径）。 */
+    override fun showImportEntryGuide() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.import_entry_guide_title)
+            .setMessage(R.string.import_entry_guide_message)
+            .setPositiveButton(R.string.import_entry_guide_ok, null)
+            .show()
     }
 
     override fun showBackupGuide() {

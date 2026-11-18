@@ -2,6 +2,7 @@
  * DeepSeek 续聊助手 —— 原生桥接垫片（document-start 注入，仅可信 origin）。
  *
  * 页面 → 原生（JSON 字符串经 assistantNativeBridge.postMessage）：
+ *   {type:'ready'}                         页面就绪信号（加载后必发一次，建立原生→页面回传通道）
  *   {type:'getKey'}                        原生回 {type:'keyValue', value:string}
  *   {type:'saveKey', key}                  页面写 Key（上游设置界面）→ 原生加密保存
  *   {type:'deleteKey'}                     页面删 Key → 原生删除
@@ -130,10 +131,18 @@
     }
   }
 
+  var readySent = false;
+
   function bindNativeListener() {
     native = window.assistantNativeBridge || native;
     if (native) {
       try { native.onmessage = onNativeMessage; } catch (e) { /* 忽略 */ }
+      if (!readySent) {
+        readySent = true;
+        // 就绪信号：原生只有在收到页面首条消息后才能拿到 reply 通道；
+        // 不发 ready，原生侧发起的导入会永远提示“页面尚未就绪”。
+        postToNative({ type: 'ready' });
+      }
       return true;
     }
     return false;
@@ -147,40 +156,96 @@
     }, 50);
   }
 
-  /* ---------------- 导入投递：交给官方导入器 ---------------- */
+  /* ---------------- 导入投递：交给官方导入器 ----------------
+   *
+   * 官方导入入口（隐藏 <input type=file>）只在「设置」弹窗打开且停在
+   * 数据标签页时才挂载（上游 open ? jsx(SettingsDialog) : null）。
+   * 因此投递分两步：
+   *   1) 入口已挂载 → 立即 fetch 原生流并填入 input，回 importResult ok；
+   *   2) 入口未挂载 → 回 NO_INPUT_YET，原生暂存文件；本脚本每 800ms
+   *      轮询入口（用户随后打开 设置→数据 即可），最长 3 分钟，超时回
+   *      INPUT_TIMEOUT。结果码：ok / NO_INPUT_YET / INPUT_TIMEOUT /
+   *      NO_FILE_INPUT / FETCH_HTTP_<n> / FETCH_FAILED。
+   */
 
   function sendImportResult(ok, code) {
     postToNative({ type: 'importResult', ok: !!ok, code: code || '' });
   }
 
-  async function deliverImport(url, name) {
+  var pendingDelivery = null; // {url, name} 待投递文件（等待入口出现）
+  var inputWatchTimer = null;
+
+  function stopInputWatcher() {
+    if (inputWatchTimer) {
+      clearInterval(inputWatchTimer);
+      inputWatchTimer = null;
+    }
+  }
+
+  function findImportInput() {
+    for (var i = 0; i < IMPORT_SELECTORS.length; i++) {
+      var el = document.querySelector(IMPORT_SELECTORS[i]);
+      if (el) return el;
+    }
+    return null;
+  }
+
+  function failDelivery(code) {
+    stopInputWatcher();
+    pendingDelivery = null;
+    sendImportResult(false, code);
+  }
+
+  async function tryDeliver() {
+    if (!pendingDelivery) return;
+    var input = findImportInput();
+    if (!input) return; // 入口还没出现，等下一轮轮询
+    var url = pendingDelivery.url;
+    var name = pendingDelivery.name;
     try {
       var res = await fetch(url, { credentials: 'omit' });
       if (!res.ok) {
-        sendImportResult(false, 'FETCH_HTTP_' + res.status);
+        failDelivery('FETCH_HTTP_' + res.status);
         return;
       }
       // 流式读取原生挂载的 ZIP；Chromium 会把大 blob 落盘，不占满内存
       var blob = await res.blob();
       var file = new File([blob], name || 'deepseek_data.zip', { type: 'application/zip' });
-      var input = null;
-      for (var i = 0; i < IMPORT_SELECTORS.length; i++) {
-        input = document.querySelector(IMPORT_SELECTORS[i]);
-        if (input) break;
-      }
-      if (!input) {
-        sendImportResult(false, 'NO_FILE_INPUT');
-        return;
-      }
       var dt = new DataTransfer();
       dt.items.add(file);
       input.files = dt.files;
       input.dispatchEvent(new Event('change', { bubbles: true }));
       // 官方导入器随后自行弹出覆盖确认并显示结果（上游自身交互）
+      stopInputWatcher();
+      pendingDelivery = null;
       sendImportResult(true, '');
     } catch (e) {
-      sendImportResult(false, 'FETCH_FAILED');
+      failDelivery('FETCH_FAILED');
     }
+  }
+
+  function deliverImport(url, name) {
+    stopInputWatcher();
+    pendingDelivery = { url: url, name: name };
+    var input = findImportInput();
+    if (input) {
+      tryDeliver();
+      return;
+    }
+    // 入口未挂载：告知原生「已暂存、等待入口」，随后轮询
+    sendImportResult(false, 'NO_INPUT_YET');
+    var deadline = Date.now() + 3 * 60 * 1000;
+    inputWatchTimer = setInterval(function () {
+      if (!pendingDelivery) {
+        stopInputWatcher();
+        return;
+      }
+      if (Date.now() > deadline) {
+        failDelivery('INPUT_TIMEOUT');
+        return;
+      }
+      tryDeliver();
+    }, 800);
   }
 
   window.DeepSeekAssistant = {

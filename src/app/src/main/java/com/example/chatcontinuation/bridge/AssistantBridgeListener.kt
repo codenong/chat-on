@@ -52,6 +52,8 @@ class AssistantBridgeListener(
             return
         }
         when (json.optString("type")) {
+            MSG_READY -> LogRedactor.i(TAG, "bridge: page ready")
+
             MSG_GET_KEY -> sendKey()
 
             MSG_SAVE_KEY -> {
@@ -76,18 +78,40 @@ class AssistantBridgeListener(
             MSG_EXPORT_END -> backupManager.onExportEnd(json)
             MSG_EXPORT_ERROR -> backupManager.onExportError(json)
 
-            MSG_IMPORT_RESULT -> {
-                if (json.optBoolean("ok")) {
-                    ui.toast(context.getString(R.string.import_delivered))
-                } else {
-                    when (json.optString("code")) {
-                        CODE_NO_FILE_INPUT -> ui.toast(context.getString(R.string.import_failed_no_input))
-                        else -> ui.toast(context.getString(R.string.import_failed_fetch))
-                    }
-                }
-            }
+            MSG_IMPORT_RESULT -> onImportResult(json)
 
             else -> LogRedactor.i(TAG, "bridge: unknown message type ignored")
+        }
+    }
+
+    /**
+     * 页面导入结果（0.1.3 协议）：
+     * - ok=true：官方导入器已接管并在页面内展示状态，原生不重复提示；
+     * - NO_INPUT_YET：入口未挂载，文件已暂存、页面在轮询等待 → 弹完整指引对话框；
+     * - 其余为最终失败：释放暂存流并提示。
+     */
+    private fun onImportResult(json: JSONObject) {
+        if (json.optBoolean("ok")) {
+            importController.clearPendingStream()
+            return
+        }
+        when (json.optString("code")) {
+            CODE_NO_INPUT_YET -> ui.showImportEntryGuide()
+
+            CODE_INPUT_TIMEOUT -> {
+                importController.clearPendingStream()
+                ui.toast(context.getString(R.string.import_entry_timeout))
+            }
+
+            CODE_NO_FILE_INPUT -> {
+                importController.clearPendingStream()
+                ui.toast(context.getString(R.string.import_failed_no_input))
+            }
+
+            else -> {
+                importController.clearPendingStream()
+                ui.toast(context.getString(R.string.import_failed_fetch))
+            }
         }
     }
 
@@ -133,6 +157,7 @@ class AssistantBridgeListener(
     companion object {
         private const val TAG = "AssistantBridge"
 
+        const val MSG_READY = "ready"
         const val MSG_GET_KEY = "getKey"
         const val MSG_SAVE_KEY = "saveKey"
         const val MSG_DELETE_KEY = "deleteKey"
@@ -145,6 +170,8 @@ class AssistantBridgeListener(
         const val MSG_EXPORT_ERROR = "exportError"
         const val MSG_IMPORT_RESULT = "importResult"
 
+        const val CODE_NO_INPUT_YET = "NO_INPUT_YET"
+        const val CODE_INPUT_TIMEOUT = "INPUT_TIMEOUT"
         const val CODE_NO_FILE_INPUT = "NO_FILE_INPUT"
     }
 }

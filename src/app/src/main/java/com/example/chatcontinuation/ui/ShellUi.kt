@@ -15,6 +15,9 @@ interface ShellUi {
     /** 打开 API Key 设置对话框。 */
     fun showKeySetupDialog()
 
+    /** 导入入口未打开时的完整指引对话框（Toast 放不下引导步骤）。 */
+    fun showImportEntryGuide()
+
     /** 打开备份与恢复说明对话框。 */
     fun showBackupGuide()
 

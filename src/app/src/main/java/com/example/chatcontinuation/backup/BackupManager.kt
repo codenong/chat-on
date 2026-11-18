@@ -52,12 +52,20 @@ class BackupManager(
 
     /** 备份与恢复说明对话框（用户可见文案强调备份不含 Key、需妥善保管）。 */
     fun showBackupGuide() {
-        MaterialAlertDialogBuilder(context)
+        MaterialAlertDialogBuilder(dialogContext())
             .setTitle(R.string.backup_guide_title)
             .setMessage(R.string.backup_guide_message)
             .setPositiveButton(R.string.key_setup_cancel, null)
             .show()
     }
+
+    /**
+     * 对话框专用上下文：applicationContext 不携带 AppCompat/Material3 主题，
+     * MaterialAlertDialogBuilder 会抛 "requires your app theme to be Theme.AppCompat"；
+     * 显式包一层应用主题，保证任何调用点都拿到合法主题。
+     */
+    private fun dialogContext(): Context =
+        android.view.ContextThemeWrapper(activity, R.style.Theme_DeepSeekAssistant)
 
     fun onExportStart(json: JSONObject) {
         val id = json.optString("id")

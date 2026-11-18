@@ -61,11 +61,31 @@
     <string name="import_confirm_ok">开始导入</string>
     <string name="import_confirm_backup">如何备份</string>
     <string name="import_cancelled">已取消导入。</string>
-    <string name="import_delivered">已交给官方导入器处理，请在页面中查看进度与结果；导入期间请保持 App 打开。</string>
+    <string name="import_delivered">已交给官方导入器，请在页面中完成确认。</string>
     <string name="import_large_file_note">文件较大，请保持 App 打开，不要中途退出。</string>
     <string name="import_page_not_ready">页面尚未就绪，请稍后重试。</string>
-    <string name="import_failed_no_input">未找到官方导入入口，请从 设置 → 数据管理 → 导入历史 中手动选择文件，并查看 docs/01_集成指南.md。</string>
+    <string name="import_entry_guide_title">导入入口未打开</string>
+    <string name="import_entry_guide_message">所选文件已暂存，原生会持续等待页面就绪。\n\n请在页面右上角头像菜单打开「设置」，切换到「数据」标签页：导入入口出现后，文件会自动填入并弹出官方导入确认。\n\n也可以直接使用页面内「导入」按钮选择文件（会打开系统文件选择器）。</string>
+    <string name="import_entry_guide_ok">知道了</string>
+    <string name="import_entry_timeout">等待导入入口超时（约 3 分钟），本次导入已取消，请重试。</string>
+    <string name="import_failed_no_input">页面里没有官方导入入口：请打开页面「设置」的「数据」标签页后重试。</string>
     <string name="import_failed_fetch">读取所选文件失败，请重新选择。</string>
+
+    <!-- 选择导入（0.1.4）：解析官方导出包索引 → 勾选对话 → 过滤重建 zip -->
+    <string name="import_scan_progress">正在读取导出包…</string>
+    <string name="import_scan_failed">无法读取该导出包：可能不是有效的官方导出文件，或格式不受支持。请重新选择。</string>
+    <string name="import_select_title">选择要导入的对话</string>
+    <string name="import_select_all">全选</string>
+    <string name="import_select_none">清空</string>
+    <string name="import_select_count_fmt">已选 %1$d / %2$d</string>
+    <string name="import_select_ok">导入所选</string>
+    <string name="import_select_full">全部导入</string>
+    <string name="import_select_empty">请先勾选至少一个对话。</string>
+    <string name="import_select_untitled">（未命名对话）</string>
+    <string name="import_item_subtitle_fmt">%1$d 条消息 · 更新于 %2$s</string>
+    <string name="import_selective_confirm_message">即将导入所选 %1$d 个对话（共 %2$d 条消息）。\n\n注意：官方导入器会用本包内容替换本机全部现有聊天记录——未被选中的对话不会保留。建议先备份现有数据。\n\n确认后开始生成导入包并导入。</string>
+    <string name="import_rebuild_progress">正在生成导入包…</string>
+    <string name="import_rebuild_failed">生成导入包失败，请重试，或改用「全部导入」。</string>
     <string name="file_size_bytes">%1$d B</string>
     <string name="file_size_kb">%1$.1f KB</string>
     <string name="file_size_mb">%1$.1f MB</string>
