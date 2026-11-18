@@ -2,6 +2,7 @@ package com.example.chatcontinuation.bridge
 
 import android.content.Context
 import android.net.Uri
+import android.webkit.WebView
 import androidx.webkit.JavaScriptReplyProxy
 import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
@@ -35,6 +36,7 @@ class AssistantBridgeListener(
     private val replyProxyRef = AtomicReference<JavaScriptReplyProxy?>()
 
     override fun onPostMessage(
+        view: WebView,
         message: WebMessageCompat,
         sourceOrigin: Uri,
         isMainFrame: Boolean,

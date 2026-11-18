@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>隐私说明</title>
+  <link rel="stylesheet" href="help.css" />
+</head>
+<body>
+<main>
+  <div class="back"><button class="back-btn" onclick="history.back()">← 返回</button></div>
+  <h1>隐私说明</h1>
+
+  <h2>数据存在哪里？</h2>
+  <ul>
+    <li><strong>聊天记录与附件：</strong>保存在你手机上本应用的本地存储（IndexedDB），
+      只随本应用存在；卸载或清除应用数据会一并删除。</li>
+    <li><strong>API Key：</strong>保存在你手机上，由 Android Keystore 加密保护；
+      不上传给开发者，也不进入聊天备份。</li>
+    <li><strong>聊天备份：</strong>由你自己导出到任意位置；备份包含会话与本地可用的图片原件，
+      不包含 API Key 和设置。备份文件含个人内容，请妥善保管。</li>
+  </ul>
+
+  <h2>哪些数据会发送给 DeepSeek API？</h2>
+  <p>
+    当你发送消息或上传附件时，生成回复所需的消息和上下文（可能包括最近的多轮对话）、
+    附件内容会提交到你配置的 DeepSeek API 服务。历史越长，实际发送的输入上下文可能越多。
+    导入历史不代表每次请求都会把全部历史发送给模型。
+  </p>
+
+  <h2>开发者收集什么？</h2>
+  <p>
+    本应用第一版不接入任何统计、埋点或崩溃上报服务，开发者不收集你的聊天内容、附件或 API Key。
+    日志中的 Key 相关内容会被脱敏。
+  </p>
+
+  <h2>身份与责任说明</h2>
+  <ul>
+    <li>本应用是第三方工具，<strong>不是 DeepSeek 官方产品</strong>；应用名称中的
+      “DeepSeek” 仅用于说明用途，正式发布前会按平台规则进行品牌审查。</li>
+    <li>API 费用由你直接向 DeepSeek 平台支付；本应用不代充值、不代收费用。</li>
+    <li>模型回答可能出错，请自行核实重要信息；不要在聊天中输入不适合交给云端模型处理的敏感信息。</li>
+    <li>聊天核心基于官方 chat-demo（MIT License），随应用分发时保留其许可证；
+      第三方依赖遵循各自的许可证。</li>
+  </ul>
+
+  <h2>卸载与数据删除</h2>
+  <p>
+    卸载应用或清除应用数据会删除本地的聊天记录、附件与 API Key，云端 API 账户不受影响。
+    如需在换机后继续使用，请先导出聊天备份并妥善保管（备份不含 API Key，新机上需重新配置）。
+  </p>
+
+  <footer>本说明对应第一版（v0.1.0）。面向公众发布前，将按目标运营地区评估个人信息保护、生成式 AI 服务、AI 内容标识、应用分发和未成年人保护等要求。</footer>
+</main>
+</body>
+</html>

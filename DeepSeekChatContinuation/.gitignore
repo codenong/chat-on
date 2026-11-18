@@ -1,0 +1,11 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+# vendored chat-demo 构建产物（assets/chat/）随仓库提交，保证离线可构建；
+# 升级用 scripts/fetch_chat_demo.sh 重新生成后整体替换并跑回归。

@@ -1,4 +1,4 @@
-# DeepSeek 续聊助手 —— app 模块
+// DeepSeek 续聊助手 —— app 模块
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")

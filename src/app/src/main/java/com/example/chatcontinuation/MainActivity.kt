@@ -70,7 +70,7 @@ class MainActivity : AppCompatActivity(), ShellUi {
             val script = DocumentStartScript.build(applicationContext, secureKeyStore)
             WebViewCompat.addDocumentStartJavaScript(
                 webView,
-                arrayOf(script),
+                script,
                 setOf(WebViewConfigHelper.TRUSTED_ORIGIN)
             )
         } catch (t: Throwable) {
