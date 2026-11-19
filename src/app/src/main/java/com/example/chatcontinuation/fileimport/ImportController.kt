@@ -159,10 +159,8 @@ class ImportController(
                 // 「行可点击但 onItemClickListener 收不到」一类变体；复用时按新 position 重挂
                 root.setOnClickListener {
                     checked[position] = !checked[position]
-                    // 立即反馈本行（0.2.4）：真机上 notify 后的重绑存在视觉滞后，
-                    // 直接赋值保证点击瞬间勾选框就切换，重排后按模型再校准
+                    // 直接同步本行 Checkable 状态与计数，无需整表 notifyDataSetChanged()
                     (root as CheckableLinearLayout).isChecked = checked[position]
-                    notifyDataSetChanged()
                     refreshCount(countView, checked, entries.size, positiveButton)
                 }
                 return root
