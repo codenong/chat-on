@@ -78,6 +78,7 @@
       memKey = String(v);
       postToNative({ type: 'saveKey', key: memKey });
       try { origRemove.call(this, k); } catch (e) { /* 忽略 */ }
+      syncBrandFromKey();
       return undefined;
     }
     return origSet.call(this, k, v);
@@ -87,6 +88,7 @@
     if (isLocalStorage(this) && isTrackedKey(k)) {
       memKey = null;
       postToNative({ type: 'deleteKey' });
+      syncBrandFromKey();
       return undefined;
     }
     return origRemove.call(this, k);
@@ -123,6 +125,7 @@
     switch (msg.type) {
       case 'keyValue':
         memKey = msg.value ? String(msg.value) : null;
+        syncBrandFromKey();
         break;
       case 'deliverImport':
         deliverImport(msg.url, msg.name);
@@ -480,6 +483,154 @@
     event.stopPropagation();
     exportBlob(href, anchor.getAttribute('download'));
   }, true);
+
+  /* ---------------- 品牌文案替换：未输入 Key 显示 deepseek，有效 Key 显示脱敏 Key + 余额 ---------------- */
+
+  var TARGET_BRAND_TEXT = 'API \u4f7f\u7528 demo';
+  var brandState = { title: 'deepseek', subtitle: '' };
+  var lastCheckedKey = null;
+  var isUpdatingBrand = false;
+  var brandObserver = null;
+
+  function maskApiKey(key) {
+    if (!key || key.length < 8) return '****';
+    return key.slice(0, 3) + '****' + key.slice(-4);
+  }
+
+  function formatBalanceInfos(infos) {
+    if (!Array.isArray(infos) || infos.length === 0) return '\u4f59\u989d \u00a50.00';
+    var parts = [];
+    for (var i = 0; i < infos.length; i++) {
+      var info = infos[i] || {};
+      var currency = info.currency || '';
+      var total = info.total_balance != null ? String(info.total_balance) : '0.00';
+      if (currency === 'CNY') parts.push('\u00a5' + total);
+      else if (currency === 'USD') parts.push('$' + total);
+      else if (currency) parts.push(currency + ' ' + total);
+      else parts.push(total);
+    }
+    return '\u4f59\u989d ' + parts.join(' \u00b7 ');
+  }
+
+  function findBrandTargets() {
+    var targets = [];
+    var marked = document.querySelectorAll('[data-ds-brand-target="1"]');
+    for (var i = 0; i < marked.length; i++) targets.push(marked[i]);
+
+    if (!document.body || typeof document.createTreeWalker !== 'function') return targets;
+    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
+    var node;
+    while ((node = walker.nextNode())) {
+      if (!node.nodeValue || node.nodeValue.trim() !== TARGET_BRAND_TEXT) continue;
+      var el = node.parentElement;
+      if (!el) continue;
+      if (el.getAttribute('data-ds-brand-target') !== '1') {
+        el.setAttribute('data-ds-brand-target', '1');
+        targets.push(el);
+      }
+    }
+    return targets;
+  }
+
+  function renderBrand() {
+    if (isUpdatingBrand) return;
+    var targets = findBrandTargets();
+    if (targets.length === 0) return;
+
+    isUpdatingBrand = true;
+    try {
+      for (var i = 0; i < targets.length; i++) {
+        var el = targets[i];
+        el.style.display = 'inline-flex';
+        el.style.flexDirection = 'column';
+        el.style.alignItems = 'flex-start';
+        el.style.lineHeight = '1.25';
+
+        var titleEl = el.querySelector('[data-ds-brand-line="title"]');
+        var subEl = el.querySelector('[data-ds-brand-line="sub"]');
+        if (!titleEl) {
+          el.textContent = '';
+          titleEl = document.createElement('span');
+          titleEl.setAttribute('data-ds-brand-line', 'title');
+          el.appendChild(titleEl);
+        }
+        if (!subEl) {
+          subEl = document.createElement('span');
+          subEl.setAttribute('data-ds-brand-line', 'sub');
+          subEl.style.fontSize = '11px';
+          subEl.style.opacity = '0.72';
+          subEl.style.fontWeight = 'normal';
+          subEl.style.marginTop = '2px';
+          el.appendChild(subEl);
+        }
+
+        titleEl.textContent = brandState.title;
+        if (brandState.subtitle) {
+          subEl.textContent = brandState.subtitle;
+          subEl.style.display = 'block';
+        } else {
+          subEl.textContent = '';
+          subEl.style.display = 'none';
+        }
+      }
+    } finally {
+      isUpdatingBrand = false;
+    }
+  }
+
+  function syncBrandFromKey() {
+    var key = memKey;
+    if (!key) {
+      lastCheckedKey = null;
+      brandState = { title: 'deepseek', subtitle: '' };
+      renderBrand();
+      return;
+    }
+    if (key === lastCheckedKey) {
+      renderBrand();
+      return;
+    }
+    lastCheckedKey = key;
+    brandState = { title: maskApiKey(key), subtitle: '\u4f59\u989d\u67e5\u8be2\u4e2d...' };
+    renderBrand();
+
+    fetch('https://api.deepseek.com/user/balance', {
+      method: 'GET',
+      headers: { 'Authorization': 'Bearer ' + key }
+    }).then(function (res) {
+      if (key !== memKey) return null;
+      if (res.status === 401 || res.status === 403) {
+        brandState = { title: 'deepseek', subtitle: '' };
+        renderBrand();
+        return null;
+      }
+      if (!res.ok) throw new Error('HTTP_' + res.status);
+      return res.json();
+    }).then(function (data) {
+      if (!data || key !== memKey) return;
+      brandState = { title: maskApiKey(key), subtitle: formatBalanceInfos(data.balance_infos) };
+      renderBrand();
+    }).catch(function () {
+      if (key !== memKey) return;
+      brandState = { title: maskApiKey(key), subtitle: '\u4f59\u989d\u6682\u4e0d\u53ef\u7528' };
+      renderBrand();
+    });
+  }
+
+  function initBrandObserver() {
+    syncBrandFromKey();
+    if (!document.body || brandObserver) return;
+    brandObserver = new MutationObserver(function () {
+      if (!isUpdatingBrand) renderBrand();
+    });
+    brandObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initBrandObserver);
+  } else {
+    initBrandObserver();
+  }
 
   window.__DS_ASSISTANT_BRIDGE__ = true;
 })();
