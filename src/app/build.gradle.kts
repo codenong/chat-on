@@ -14,8 +14,8 @@ android {
         // WebView 本体需设备上较新的 System WebView（Play 通道自动更新）。
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "0.2.6"
+        versionCode = 14
+        versionName = "0.2.7"
         resourceConfigurations += listOf("zh", "en")
     }
 

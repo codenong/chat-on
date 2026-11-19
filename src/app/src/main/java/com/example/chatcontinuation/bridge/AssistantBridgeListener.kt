@@ -72,6 +72,7 @@ class AssistantBridgeListener(
             }
 
             MSG_PICK_IMPORT -> importController.launchImport()
+            MSG_OPEN_MENU -> ui.showMainMenu()
 
             MSG_EXPORT_START -> backupManager.onExportStart(json)
             MSG_EXPORT_CHUNK -> backupManager.onExportChunk(json)
@@ -196,6 +197,7 @@ class AssistantBridgeListener(
         const val MSG_SAVE_KEY = "saveKey"
         const val MSG_DELETE_KEY = "deleteKey"
         const val MSG_PICK_IMPORT = "pickImport"
+        const val MSG_OPEN_MENU = "openMenu"
         const val MSG_KEY_VALUE = "keyValue"
         const val MSG_DELIVER_IMPORT = "deliverImport"
         const val MSG_APPEND_IMPORT = "appendImport"

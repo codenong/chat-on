@@ -24,7 +24,6 @@ import com.example.chatcontinuation.ui.OnboardingController
 import com.example.chatcontinuation.ui.ShellUi
 import com.example.chatcontinuation.ui.WebViewConfigHelper
 import com.example.chatcontinuation.util.LogRedactor
-import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /**
@@ -104,9 +103,6 @@ class MainActivity : AppCompatActivity(), ShellUi {
         }
         webView.loadUrl(WebViewConfigHelper.CHAT_ENTRY_URL)
 
-        val toolbar = findViewById<MaterialToolbar>(R.id.toolbar)
-        toolbar.inflateMenu(R.menu.menu_main)
-        toolbar.setOnMenuItemClickListener { item -> handleMenuItem(item.itemId) }
 
         onboarding.attachIfNeeded(findViewById(R.id.onboarding_slot))
 
@@ -181,6 +177,29 @@ class MainActivity : AppCompatActivity(), ShellUi {
     }
 
     // ---------- ShellUi ----------
+
+    override fun showMainMenu() {
+        mainHandler.post {
+            val items = arrayOf(
+                getString(R.string.menu_setup_key) to R.id.action_setup_key,
+                getString(R.string.menu_import) to R.id.action_import,
+                getString(R.string.menu_backup_guide) to R.id.action_backup_guide,
+                getString(R.string.menu_help_export) to R.id.action_help_export,
+                getString(R.string.menu_help_apikey) to R.id.action_help_apikey,
+                getString(R.string.menu_help_import) to R.id.action_help_import,
+                getString(R.string.menu_privacy) to R.id.action_privacy,
+                getString(R.string.menu_about) to R.id.action_about,
+            )
+            val labels = items.map { it.first }.toTypedArray()
+            MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.app_name)
+                .setItems(labels) { _, which ->
+                    handleMenuItem(items[which].second)
+                }
+                .setNegativeButton(R.string.key_setup_cancel, null)
+                .show()
+        }
+    }
 
     override fun toast(message: String) {
         mainHandler.post {

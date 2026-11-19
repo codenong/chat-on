@@ -26,6 +26,9 @@ interface ShellUi {
 
     /** Key 状态变化（保存/删除）后刷新依赖界面（如引导页状态行）。 */
     fun onKeyChanged()
+
+    /** 打开原生功能菜单（由页面内“导入助手”入口触发）。 */
+    fun showMainMenu()
 }
 
 /** 内置帮助页；页面随 APK 打包在 assets/help/ 下，经 AssetLoader 以可信 origin 加载。 */

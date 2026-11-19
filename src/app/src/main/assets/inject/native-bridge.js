@@ -632,5 +632,82 @@
     initBrandObserver();
   }
 
+  /* ---------------- 页面菜单注入：「设置」上方插入「导入助手」并唤起原生菜单 ---------------- */
+
+  var SETTINGS_LABELS = ['\u8bbe\u7f6e', 'Settings'];
+  var IMPORT_ASSISTANT_LABEL = '\u5bfc\u5165\u52a9\u624b';
+  var isInjectingMenu = false;
+  var menuObserver = null;
+
+  function findSettingsMenuItem() {
+    if (!document.body || typeof document.createTreeWalker !== 'function') return null;
+    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
+    var node;
+    while ((node = walker.nextNode())) {
+      var text = node.nodeValue ? node.nodeValue.trim() : '';
+      if (SETTINGS_LABELS.indexOf(text) === -1) continue;
+      var el = node.parentElement;
+      if (!el || el.closest('[data-ds-native-menu="1"]')) continue;
+      var item = el.closest('button, [role="menuitem"], a, li');
+      if (item && item.parentElement) return item;
+      if (el.parentElement) return el;
+    }
+    return null;
+  }
+
+  function replaceLabelText(root, newText) {
+    if (typeof document.createTreeWalker !== 'function') return false;
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    var node;
+    while ((node = walker.nextNode())) {
+      var text = node.nodeValue ? node.nodeValue.trim() : '';
+      if (SETTINGS_LABELS.indexOf(text) !== -1) {
+        node.nodeValue = newText;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function ensureImportAssistantMenuItem() {
+    if (isInjectingMenu) return;
+    var settingsItem = findSettingsMenuItem();
+    if (!settingsItem || !settingsItem.parentElement) return;
+    var parent = settingsItem.parentElement;
+    if (parent.querySelector('[data-ds-native-menu="1"]')) return;
+
+    isInjectingMenu = true;
+    try {
+      var clone = settingsItem.cloneNode(true);
+      clone.setAttribute('data-ds-native-menu', '1');
+      if (!replaceLabelText(clone, IMPORT_ASSISTANT_LABEL)) {
+        clone.textContent = IMPORT_ASSISTANT_LABEL;
+      }
+      clone.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        postToNative({ type: 'openMenu' });
+      }, true);
+      parent.insertBefore(clone, settingsItem);
+    } finally {
+      isInjectingMenu = false;
+    }
+  }
+
+  function initMenuObserver() {
+    ensureImportAssistantMenuItem();
+    if (!document.body || menuObserver) return;
+    menuObserver = new MutationObserver(function () {
+      if (!isInjectingMenu) ensureImportAssistantMenuItem();
+    });
+    menuObserver.observe(document.body, { childList: true, subtree: true });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initMenuObserver);
+  } else {
+    initMenuObserver();
+  }
+
   window.__DS_ASSISTANT_BRIDGE__ = true;
 })();
