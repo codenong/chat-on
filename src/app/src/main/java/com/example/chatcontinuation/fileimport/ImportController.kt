@@ -9,6 +9,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseAdapter
+import android.widget.CheckBox
 import android.widget.TextView
 import android.widget.ListView
 import androidx.activity.ComponentActivity
@@ -149,11 +150,18 @@ class ImportController(
                 root.findViewById<TextView>(R.id.import_item_title).text =
                     entry.title ?: context.getString(R.string.import_select_untitled)
                 root.findViewById<TextView>(R.id.import_item_subtitle).text = subtitle(entry)
+                // 0.2.4 勾选视觉三层兜底：① 子 CheckBox 直接按模型赋值（不依赖
+                // CheckableLinearLayout 内部同步链）；② 行容器 Checkable 状态照旧；
+                // ③ 点击时立即同步本行视觉（见下方点击监听），不等重排。
+                root.findViewById<CheckBox>(R.id.import_item_check).isChecked = checked[position]
                 (root as CheckableLinearLayout).isChecked = checked[position]
                 // 点击挂行自身（0.2.3）：不依赖 ListView 点击派发，杜绝
                 // 「行可点击但 onItemClickListener 收不到」一类变体；复用时按新 position 重挂
                 root.setOnClickListener {
                     checked[position] = !checked[position]
+                    // 立即反馈本行（0.2.4）：真机上 notify 后的重绑存在视觉滞后，
+                    // 直接赋值保证点击瞬间勾选框就切换，重排后按模型再校准
+                    (root as CheckableLinearLayout).isChecked = checked[position]
                     notifyDataSetChanged()
                     refreshCount(countView, checked, entries.size, positiveButton)
                 }

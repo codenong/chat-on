@@ -8,7 +8,7 @@ import android.widget.LinearLayout
 
 /**
  * 会话选择列表项的可勾选容器：外层承担 Checkable 状态，
- * 同步内部 CheckBox 指示器；点击行为由列表 OnItemClickListener 驱动。
+ * 同步内部 CheckBox 指示器；点击行为由行自身 OnClickListener 驱动（0.2.3 起）。
  */
 class CheckableLinearLayout @JvmOverloads constructor(
     context: Context,
@@ -19,8 +19,12 @@ class CheckableLinearLayout @JvmOverloads constructor(
 
     override fun isChecked(): Boolean = checked
 
+    /**
+     * 无条件同步（0.2.4）：不再早退。ListView 复用的 scrap view 可能带着
+     * 与目标不一致的旧状态（早退会跳过子 CheckBox 同步，造成勾选框视觉
+     * 不更新）；本方法幂等，每次绑定直接刷到目标状态最稳妥。
+     */
     override fun setChecked(checked: Boolean) {
-        if (this.checked == checked) return
         this.checked = checked
         for (i in 0 until childCount) {
             val child = getChildAt(i)

@@ -109,6 +109,11 @@ scripts/fetch_chat_demo.sh               # 固定 commit vendoring 脚本
 
 ## 八、版本历史
 
+- **0.2.4（versionCode 11）**：修复会话选择对话框勾选框不显示选中状态的问题。
+  三层兜底：子 CheckBox 在每次绑定与点击时直接按勾选模型赋值（不再依赖
+  CheckableLinearLayout 内部同步链）；CheckableLinearLayout.setChecked 移除
+  早退判断，无条件同步（ListView 复用的 scrap view 可能带旧状态）；点击瞬间
+  直接刷新本行视觉，不等 notifyDataSetChanged 重排。
 - **0.2.3（versionCode 10）**：修复「勾选一个却全部导入」误导入事故。根因是对话框
   默认全选 + 点击反选：用户「点选一个」的直觉操作实际取消该会话，其余 N-1 个全部
   被导入。修复：默认不选（点谁选谁）；点击挂行自身监听，不再依赖 ListView 点击
