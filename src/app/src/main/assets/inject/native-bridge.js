@@ -7,7 +7,7 @@
  *   {type:'saveKey', key}                  页面写 Key（上游设置界面）→ 原生加密保存
  *   {type:'deleteKey'}                     页面删 Key → 原生删除
  *   {type:'pickImport'}                    请求打开系统文件选择器（SAF）
- *   {type:'importResult', ok, code}        投递结果反馈
+ *   {type:'importResult', ok, code, count} 导入结果反馈（count=追加导入的会话数）
  *   {type:'exportStart', id, name, size}   导出落盘开始（备份）
  *   {type:'exportChunk', id, index, data}  导出分块（base64）
  *   {type:'exportEnd', id}                 导出结束
@@ -15,7 +15,8 @@
  *
  * 原生 → 页面（assistantNativeBridge.onmessage）：
  *   {type:'keyValue', value}               Key 变更（value 为空串表示已删除）
- *   {type:'deliverImport', url, name}      投递所选 ZIP 给官方导入器
+ *   {type:'deliverImport', url, name}      旧链路：投递所选 ZIP 给官方导入入口
+ *   {type:'appendImport', url, name}       追加导入：直接调用官方解析与写库（0.2.0）
  *
  * 安全设计（设计稿 6.2 / 七）：
  *   - Key 只存在本内存变量，绝不写入 localStorage；
@@ -126,6 +127,9 @@
       case 'deliverImport':
         deliverImport(msg.url, msg.name);
         break;
+      case 'appendImport':
+        appendImport(msg.url, msg.name);
+        break;
       default:
         break;
     }
@@ -168,8 +172,8 @@
    *      NO_FILE_INPUT / FETCH_HTTP_<n> / FETCH_FAILED。
    */
 
-  function sendImportResult(ok, code) {
-    postToNative({ type: 'importResult', ok: !!ok, code: code || '' });
+  function sendImportResult(ok, code, count) {
+    postToNative({ type: 'importResult', ok: !!ok, code: code || '', count: count || 0 });
   }
 
   var pendingDelivery = null; // {url, name} 待投递文件（等待入口出现）
@@ -246,6 +250,173 @@
       }
       tryDeliver();
     }, 800);
+  }
+
+  /* ---------------- 追加导入：直接调用官方代码（0.2.0） ----------------
+   *
+   * 官方导入 = importArchive() 解析 ZIP → IndexedDB 暂存区（sessionsStaging/
+   * filesStaging，含图片 blob 与 mimeType 修复），随后 UI 层调用提交函数把
+   * 暂存内容搬入现网库——但提交前会**清空现网全部会话**（官方文案「覆盖当
+   * 前所有对话记录」的实现点），这就是覆盖语义的来源。
+   *
+   * 我们复用官方前半段（解析、校验、转换、图片落库全部官方代码），只替换
+   * 提交步骤：用官方常规写库 E1(session, files) 把暂存会话逐条 upsert 进
+   * 现网库——不调用清库提交 → 等效追加导入。同 id 会话按导入侧覆盖（与
+   * 官方备份恢复语义一致），不同 id 全部并入。
+   *
+   * 页面内实现（chat-demo 构建指纹，来自官方产物逆向）：
+   *   - rspack 分块全局 self.rspackChunkchat_demo，push 探针回调取 require；
+   *   - 解析器模块 8444（异步分块 6061+925）：{checkArchiveFormat, importArchive}；
+   *   - 存储模块 3599：Le=清暂存，E1=会话 upsert（files+sessions+summaries）；
+   *   - IndexedDB 库名 "chat-demo"（暂存区读取走原生 indexedDB API）。
+   * 页面更新导致指纹失效时回 MODULE_NOT_FOUND，原生侧回退旧官方 UI 流程。
+   */
+
+  var appendBusy = false;
+
+  function resolveWebpackRequire() {
+    var chunks = self.rspackChunkchat_demo;
+    if (!chunks || typeof chunks.push !== 'function') return null;
+    var req = null;
+    try {
+      // 每次用全新探针 id（运行时会把探针标记为已加载，复用 id 将不再回调）；
+      // 假分块不在注册表中 → 回调本探针并交出 __webpack_require__
+      chunks.push([['__ds_append_probe__' + Date.now()], {}, function (r) { req = r; }]);
+    } catch (e) {
+      return null;
+    }
+    return req && typeof req.e === 'function' ? req : null;
+  }
+
+  function openAppDb() {
+    return new Promise(function (resolve, reject) {
+      var open;
+      try {
+        open = indexedDB.open('chat-demo'); // 不带版本号：按当前版本打开，不触发升级
+      } catch (e) {
+        reject(e);
+        return;
+      }
+      open.onsuccess = function () { resolve(open.result); };
+      open.onerror = function () { reject(open.error || new Error('idb open failed')); };
+      open.onblocked = function () { reject(new Error('idb blocked')); };
+    });
+  }
+
+  async function readStaging() {
+    var db = await openAppDb();
+    try {
+      var sessions = await new Promise(function (resolve, reject) {
+        var req = db.transaction('sessionsStaging', 'readonly')
+          .objectStore('sessionsStaging').getAll();
+        req.onsuccess = function () { resolve(req.result || []); };
+        req.onerror = function () { reject(req.error || new Error('read sessions failed')); };
+      });
+      var files = await new Promise(function (resolve, reject) {
+        var req = db.transaction('filesStaging', 'readonly')
+          .objectStore('filesStaging').getAll();
+        req.onsuccess = function () { resolve(req.result || []); };
+        req.onerror = function () { reject(req.error || new Error('read files failed')); };
+      });
+      return { sessions: sessions, files: files };
+    } finally {
+      try { db.close(); } catch (e) { /* 忽略 */ }
+    }
+  }
+
+  function mapAppendError(e) {
+    // 官方校验错误为 {key:'backupXxx'} 形态；其余按通用失败处理
+    var key = e && e.key ? String(e.key).toUpperCase() : '';
+    return key ? 'BACKUP_' + key : 'APPEND_FAILED';
+  }
+
+  async function appendImport(url, name) {
+    if (appendBusy) {
+      sendImportResult(false, 'APPEND_BUSY');
+      return;
+    }
+    appendBusy = true;
+    try {
+      var res = await fetch(url, { credentials: 'omit' });
+      if (!res.ok) {
+        sendImportResult(false, 'FETCH_HTTP_' + res.status);
+        return;
+      }
+      var blob = await res.blob();
+      var file = new File([blob], name || 'deepseek_data.zip', { type: 'application/zip' });
+
+      var req = resolveWebpackRequire();
+      if (!req) {
+        sendImportResult(false, 'MODULE_NOT_FOUND');
+        return;
+      }
+      var storage = null;
+      try { storage = req(3599); } catch (e) { storage = null; }
+      if (!storage || typeof storage.Le !== 'function' || typeof storage.E1 !== 'function') {
+        sendImportResult(false, 'MODULE_NOT_FOUND');
+        return;
+      }
+      var parser = null;
+      try {
+        await Promise.all([req.e(6061), req.e(925)]);
+        parser = req(8444);
+      } catch (e) { parser = null; }
+      if (!parser ||
+          typeof parser.checkArchiveFormat !== 'function' ||
+          typeof parser.importArchive !== 'function') {
+        sendImportResult(false, 'MODULE_NOT_FOUND');
+        return;
+      }
+
+      // 清残留暂存（官方 add() 撞 key 会整包失败）
+      await storage.Le();
+      try {
+        await parser.checkArchiveFormat(file);
+        await parser.importArchive(file); // 官方解析 → 暂存区（内部含 mime 修复）
+      } catch (e) {
+        sendImportResult(false, mapAppendError(e));
+        return;
+      }
+
+      var staged;
+      try {
+        staged = await readStaging();
+      } catch (e) {
+        sendImportResult(false, 'IDB_FAIL');
+        return;
+      }
+      if (!staged.sessions.length) {
+        sendImportResult(false, 'STAGE_EMPTY');
+        return;
+      }
+
+      // 追加提交：暂存 → 现网（官方 E1 upsert，不清库）。文件记录按会话分组。
+      var byId = {};
+      for (var i = 0; i < staged.files.length; i++) byId[staged.files[i].id] = staged.files[i];
+      for (var j = 0; j < staged.sessions.length; j++) {
+        var session = staged.sessions[j];
+        var need = {};
+        var msgs = (session && session.messages) || [];
+        for (var m = 0; m < msgs.length; m++) {
+          var fs = (msgs[m] && msgs[m].files) || [];
+          for (var k = 0; k < fs.length; k++) need[fs[k].id] = true;
+        }
+        var own = [];
+        for (var p = 0; p < staged.files.length; p++) {
+          if (need[staged.files[p].id]) own.push(staged.files[p]);
+        }
+        await storage.E1(session, own);
+      }
+      await storage.Le();
+
+      sendImportResult(true, 'APPENDED', staged.sessions.length);
+      // 刷新页面让会话列表重新读库（结果消息已同步发出，不受刷新影响）
+      setTimeout(function () { try { location.reload(); } catch (e) { /* 忽略 */ } }, 400);
+    } catch (e) {
+      sendImportResult(false, mapAppendError(e));
+    } finally {
+      appendBusy = false;
+    }
   }
 
   window.DeepSeekAssistant = {

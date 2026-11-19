@@ -1,22 +1,16 @@
 package com.example.chatcontinuation.fileimport
 
 import android.content.Context
-import android.database.Cursor
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
-import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.AdapterView
 import android.widget.BaseAdapter
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.ListView
-import android.widget.ProgressBar
 import android.widget.TextView
+import android.widget.ListView
 import androidx.activity.ComponentActivity
 import androidx.appcompat.app.AlertDialog
 import com.example.chatcontinuation.R
@@ -24,40 +18,66 @@ import com.example.chatcontinuation.backup.BackupManager
 import com.example.chatcontinuation.bridge.AssistantBridgeListener
 import com.example.chatcontinuation.ui.ShellUi
 import com.example.chatcontinuation.ui.WebViewConfigHelper
-import com.example.chatcontinuation.util.LogRedactor
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import java.io.File
 import java.text.SimpleDateFormat
-import java.util.Arrays
 import java.util.Locale
 import java.util.TimeZone
-import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * 导入编排（设计稿 4.3 / 五.流程 B / 阶段 2 与 0.1.4 选择导入）：
- * 系统选择器选 ZIP → 复制到缓存并扫描索引（manifest 校验 + 会话列表）
- * → 用户在对话框中勾选要导入的对话（或「全部导入」）→ 确认覆盖提示
- * （选择导入时按官方条目顺序重建过滤包）→ 挂载流并投递给官方导入器
- * → 页面内官方覆盖确认。取消、页面未就绪、找不到导入入口都有明确反馈。
+ * 导入编排（0.2.1：选择导入 × 追加导入）：
+ * 系统选择器选 ZIP → 原生扫描官方导出包索引（[ArchiveScanner]，只读 manifest
+ * 与会话索引，不解压会话）→ 弹出会话勾选对话框（全选/清空/计数；「全部导入」
+ * 整包直走；「导入所选」按所选会话过滤重建 ZIP——[FilteredArchiveBuilder] 保证
+ * 官方条目顺序与「索引 id 集合 == 会话文件集合」校验全部成立）→ 通知页面走
+ * appendImport：页面内直接调用官方解析器（importArchive → IndexedDB 暂存区）与
+ * 官方常规写库函数（E1 按会话 upsert）把所选内容**追加**进现网库，跳过官方
+ * 「清空现网库再搬入暂存」的提交步骤（Xz）——现有对话全部保留，同 id 会话按
+ * 导入侧覆盖。
+ *
+ * 兜底：官方页面更新导致模块指纹失效（MODULE_NOT_FOUND）时，回退 0.1.x
+ * 旧链路——投递给官方页面导入入口，由官方覆盖式导入（页面内自行确认）；
+ * 此时投递的是用户勾选后重建的包，语义一致。
+ *
+ * 线程约定：扫描与重建在工作线程，对话框与状态（[importing]/[tempFiles]）
+ * 只在主线程读写；[AssistantBridgeListener] 的回调也在主线程。
  */
 class ImportController(
     private val activity: ComponentActivity,
-    private val context: Context,
     private val streamHandler: ImportStreamPathHandler,
-    private val backupManager: BackupManager,
+    @Suppress("unused") private val backupManager: BackupManager, // 旧链路保留注入
     private val ui: ShellUi
 ) {
+
+    /**
+     * 非 UI 用途的 Context（contentResolver/cacheDir/getString），即 [activity] 本身。
+     * 对话框与布局填充必须直接用 [activity]：Material 组件要求 Activity 主题
+     * （ThemeEnforcement 崩溃防护，见 scripts/check_ui_context.sh 审计）。
+     */
+    private val context: Context get() = activity
 
     /** 由 MainActivity 在桥接构造完成后注入。 */
     var bridge: AssistantBridgeListener? = null
 
     private val main = Handler(Looper.getMainLooper())
-    private val executor = Executors.newSingleThreadExecutor()
+
+    /** 导入进行中：防重入 + 超时兜底判定。 */
+    private val importing = AtomicBoolean(false)
+
+    /** 本次导入产生的缓存文件（原包副本、过滤重建包），终结后统一删除。仅主线程读写。 */
+    private val tempFiles = ArrayList<File>()
+
     private val scanner = ArchiveScanner(context)
     private val builder = FilteredArchiveBuilder()
 
-    /** 导入流程产生的临时文件（缓存副本/重建包），随流程终结清理。 */
-    private val tempFiles = ArrayList<File>()
+    private val timeoutRunnable = Runnable {
+        if (importing.getAndSet(false)) {
+            streamHandler.clear()
+            deleteTempFiles()
+            ui.toast(context.getString(R.string.import_append_timeout))
+        }
+    }
 
     private val picker = FilePicker(activity) { uri ->
         if (uri == null) {
@@ -71,331 +91,261 @@ class ImportController(
         picker.launch()
     }
 
-    /** 页面侧导入流程终结（成功或最终失败）后，释放暂存流并清理临时文件。 */
+    /** 页面侧导入流程终结（成功或最终失败）后，释放暂存流与缓存文件并复位状态。 */
     fun clearPendingStream() {
+        main.removeCallbacks(timeoutRunnable)
+        importing.set(false)
         streamHandler.clear()
-        cleanupTempFiles()
+        deleteTempFiles()
     }
 
-    // ---------- 选择导入（0.1.4） ----------
+    // ---------- 选择导入（0.1.4 引入，0.2.1 接入追加链路） ----------
 
     private fun onPicked(uri: Uri) {
-        cleanupTempFiles()
-        val progress = showProgress(R.string.import_scan_progress)
-        executor.execute {
-            try {
-                val result = scanner.scan(uri)
-                main.post {
-                    dismissDialog(progress)
-                    onScanOk(result)
-                }
-            } catch (t: Throwable) {
-                LogRedactor.w(TAG, "archive scan failed: ${t.javaClass.simpleName}")
-                main.post {
-                    dismissDialog(progress)
-                    ui.toast(context.getString(R.string.import_scan_failed))
-                }
-            }
-        }
-    }
-
-    private fun onScanOk(result: ArchiveScanner.ScanResult) {
-        if (!canShowUi()) {
-            cleanupTempFiles()
+        if (!importing.compareAndSet(false, true)) {
+            ui.toast(context.getString(R.string.import_append_busy))
             return
         }
-        // 展示顺序：最近更新的会话在前（updated_at 为 ISO 格式，字符串比较即可）
-        showSelectDialog(result, result.indexEntries.sortedByDescending { it.updatedAt })
+        val displayName = describeName(uri)
+        ui.toast(context.getString(R.string.import_scan_progress))
+        Thread {
+            val scan = try {
+                scanner.scan(uri)
+            } catch (t: Throwable) {
+                main.post {
+                    importing.set(false)
+                    ui.toast(context.getString(R.string.import_scan_failed))
+                }
+                return@Thread
+            }
+            main.post {
+                tempFiles.add(scan.sourceFile)
+                showSelectDialog(scan, displayName)
+            }
+        }.start()
     }
 
-    private fun showSelectDialog(result: ArchiveScanner.ScanResult, entries: List<HistoryIndexEntry>) {
-        // 对话框与内容视图统一使用带应用主题的上下文：applicationContext
-        // 无 Material3 主题，MaterialAlertDialogBuilder 构造时会直接崩溃（0.1.4）
-        val dctx = dialogContext()
-        val view = LayoutInflater.from(dctx).inflate(R.layout.dialog_import_select, null)
+    private fun showSelectDialog(scan: ArchiveScanner.ScanResult, displayName: String) {
+        val entries = scan.indexEntries
+        // 0.2.3 根治误导入事故：默认不勾选（点谁选谁）。此前默认全选 + 点击反选，
+        // 用户「点选一个」的直觉操作实际产生 N-1 勾选，点「导入所选」后整包导入。
+        val checked = BooleanArray(entries.size)
+
+        val view = LayoutInflater.from(activity).inflate(R.layout.dialog_import_select, null)
         val listView = view.findViewById<ListView>(android.R.id.list)
         val countView = view.findViewById<TextView>(R.id.import_select_count)
-        val checked = BooleanArray(entries.size)
-        val inflater = LayoutInflater.from(dctx)
 
-        listView.adapter = object : BaseAdapter() {
+        // 主按钮引用在 dialog.show() 后才有；闭包经此 var 实时联动
+        var positiveButton: TextView? = null
+
+        val adapter = object : BaseAdapter() {
             override fun getCount(): Int = entries.size
-            override fun getItem(position: Int): Any = entries[position]
+            override fun getItem(position: Int): HistoryIndexEntry = entries[position]
             override fun getItemId(position: Int): Long = position.toLong()
             override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-                val row = convertView ?: inflater.inflate(R.layout.item_conversation_select, parent, false)
+                val root = convertView ?: LayoutInflater.from(parent.context)
+                    .inflate(R.layout.item_conversation_select, parent, false)
                 val entry = entries[position]
-                row.findViewById<TextView>(R.id.import_item_title).text =
+                root.findViewById<TextView>(R.id.import_item_title).text =
                     entry.title ?: context.getString(R.string.import_select_untitled)
-                row.findViewById<TextView>(R.id.import_item_subtitle).text = context.getString(
-                    R.string.import_item_subtitle_fmt,
-                    entry.messageCount,
-                    formatTimestamp(entry.updatedAt)
-                )
-                (row as CheckableLinearLayout).isChecked = checked[position]
-                return row
+                root.findViewById<TextView>(R.id.import_item_subtitle).text = subtitle(entry)
+                (root as CheckableLinearLayout).isChecked = checked[position]
+                // 点击挂行自身（0.2.3）：不依赖 ListView 点击派发，杜绝
+                // 「行可点击但 onItemClickListener 收不到」一类变体；复用时按新 position 重挂
+                root.setOnClickListener {
+                    checked[position] = !checked[position]
+                    notifyDataSetChanged()
+                    refreshCount(countView, checked, entries.size, positiveButton)
+                }
+                return root
             }
         }
+        listView.adapter = adapter
 
-        fun selectedEntries(): List<HistoryIndexEntry> =
-            entries.filterIndexed { index, _ -> checked[index] }
-
-        fun repaintVisible() {
-            for (i in 0 until listView.childCount) {
-                val pos = listView.firstVisiblePosition + i
-                (listView.getChildAt(i) as? CheckableLinearLayout)?.isChecked = checked[pos]
-            }
+        fun refreshAll() {
+            adapter.notifyDataSetChanged()
+            refreshCount(countView, checked, entries.size, positiveButton)
         }
 
-        val dialog = MaterialAlertDialogBuilder(dctx)
+        view.findViewById<View>(R.id.import_select_all).setOnClickListener {
+            checked.fill(true)
+            refreshAll()
+        }
+        view.findViewById<View>(R.id.import_select_none).setOnClickListener {
+            checked.fill(false)
+            refreshAll()
+        }
+
+        val dialog = MaterialAlertDialogBuilder(activity)
             .setTitle(R.string.import_select_title)
             .setView(view)
             .setPositiveButton(R.string.import_select_ok, null)
-            .setNegativeButton(R.string.key_setup_cancel) { _, _ -> cleanupTempFiles() }
-            .setNeutralButton(R.string.import_select_full) { _, _ -> showFullImportConfirm(result) }
+            .setNegativeButton(R.string.key_setup_cancel) { _, _ -> cancelSelection() }
+            .setNeutralButton(R.string.import_select_full, null)
             .create()
-
-        fun refreshHeader() {
-            val positive = listView.tag as? Button
-            val n = checked.count { it }
-            countView.text = context.getString(R.string.import_select_count_fmt, n, entries.size)
-            positive?.isEnabled = n > 0
-        }
-
-        listView.onItemClickListener = AdapterView.OnItemClickListener { _, _, position, _ ->
-            checked[position] = !checked[position]
-            repaintVisible()
-            refreshHeader()
-        }
-
-        dialog.setOnShowListener {
-            val positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
-            listView.tag = positive
-            view.findViewById<Button>(R.id.import_select_all).setOnClickListener {
-                Arrays.fill(checked, true)
-                repaintVisible()
-                refreshHeader()
-            }
-            view.findViewById<Button>(R.id.import_select_none).setOnClickListener {
-                Arrays.fill(checked, false)
-                repaintVisible()
-                refreshHeader()
-            }
-            positive.setOnClickListener {
-                val picked = selectedEntries()
-                if (picked.isEmpty()) {
-                    ui.toast(context.getString(R.string.import_select_empty))
-                } else {
-                    dialog.dismiss()
-                    val totalMessages = picked.sumOf { it.messageCount }
-                    showSelectiveConfirm(result, picked.map { it.id }, picked.size, totalMessages)
-                }
-            }
-            refreshHeader()
-        }
-        dialog.setOnCancelListener { cleanupTempFiles() }
+        dialog.setOnCancelListener { cancelSelection() }
         dialog.show()
-    }
 
-    /** 选择导入确认：强调「只带入选中的对话，但官方导入器会替换本机全部记录」。 */
-    private fun showSelectiveConfirm(
-        result: ArchiveScanner.ScanResult,
-        ids: List<String>,
-        selectedCount: Int,
-        totalMessages: Long
-    ) {
-        if (!canShowUi()) {
-            cleanupTempFiles()
-            return
+        positiveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+        // 勾选为空时按钮已禁用（refreshCount 联动）；toast 兜底语义保持
+        positiveButton.setOnClickListener {
+            val ids = selectedIds(entries, checked)
+            if (ids.isEmpty()) {
+                ui.toast(context.getString(R.string.import_select_empty))
+                return@setOnClickListener
+            }
+            dialog.dismiss()
+            if (ids.size == entries.size) {
+                // 全选与整包内容一致，跳过重建直接追加
+                startAppend(scan.sourceFile, displayName)
+            } else {
+                rebuildAndAppend(scan, ids, displayName)
+            }
         }
-        MaterialAlertDialogBuilder(dialogContext())
-            .setTitle(R.string.import_confirm_title)
-            .setMessage(
-                context.getString(
-                    R.string.import_selective_confirm_message,
-                    selectedCount,
-                    totalMessages
-                )
-            )
-            .setPositiveButton(R.string.import_confirm_ok) { _, _ -> beginRebuild(result, ids) }
-            .setNegativeButton(R.string.key_setup_cancel) { _, _ -> cleanupTempFiles() }
-            .setNeutralButton(R.string.import_confirm_backup) { _, _ -> backupManager.showBackupGuide() }
-            .show()
+        // 整包追加：不重建，等价 0.2.0 行为（按钮文案「全部导入」，语义明确）
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+            dialog.dismiss()
+            startAppend(scan.sourceFile, displayName)
+        }
+        refreshCount(countView, checked, entries.size, positiveButton)
     }
 
-    /** 后台按官方条目顺序重建过滤包，成功后走既有投递链路。 */
-    private fun beginRebuild(result: ArchiveScanner.ScanResult, rawIds: List<String>) {
-        val progress = showProgress(R.string.import_rebuild_progress)
-        executor.execute {
+    /** 主线程：取消选择对话框，清理缓存并复位（幂等）。 */
+    private fun cancelSelection() {
+        main.removeCallbacks(timeoutRunnable)
+        importing.set(false)
+        streamHandler.clear()
+        deleteTempFiles()
+        ui.toast(context.getString(R.string.import_cancelled))
+    }
+
+    /** 按所选会话过滤重建导出包（工作线程），成功后进入追加导入。 */
+    private fun rebuildAndAppend(
+        scan: ArchiveScanner.ScanResult,
+        ids: List<String>,
+        displayName: String
+    ) {
+        ui.toast(context.getString(R.string.import_rebuild_progress))
+        Thread {
             try {
-                // 会话块顺序归一化为原索引顺序（官方导入器仅要求集合一致，
-                // 但确定性顺序便于比对与排错）；索引过滤同样保持原顺序。
-                val idSet = rawIds.toSet()
-                val orderedIds = result.indexEntries.map { it.id }.filter { it in idSet }
-                val filteredIndex = HistoryIndex.filterIndex(result.indexJsonBytes, orderedIds)
+                val filteredIndex = HistoryIndex.filterIndex(scan.indexJsonBytes, ids)
                 val outFile = File.createTempFile("filtered_import_", ".zip", context.cacheDir)
-                trackTemp(outFile)
-                builder.build(result.sourceFile, orderedIds, filteredIndex, result.hasUserJson, outFile)
+                builder.build(scan.sourceFile, ids, filteredIndex, scan.hasUserJson, outFile)
                 main.post {
-                    dismissDialog(progress)
-                    startImport(Uri.fromFile(outFile), PARTIAL_EXPORT_NAME)
+                    tempFiles.add(outFile)
+                    startAppend(outFile, displayName)
                 }
             } catch (t: Throwable) {
-                LogRedactor.w(TAG, "rebuild failed: ${t.javaClass.simpleName}")
-                cleanupTempFiles()
                 main.post {
-                    dismissDialog(progress)
                     ui.toast(context.getString(R.string.import_rebuild_failed))
+                    importing.set(false)
+                    deleteTempFiles()
                 }
             }
-        }
+        }.start()
     }
 
-    // ---------- 整包导入（原有路径 / 选择对话框的「全部导入」） ----------
+    // ---------- 追加导入（0.2.0） ----------
 
-    private fun showFullImportConfirm(result: ArchiveScanner.ScanResult) {
-        if (!canShowUi()) {
-            cleanupTempFiles()
-            return
-        }
-        val source = result.sourceFile
-        val (displayName, sizeBytes) = describe(Uri.fromFile(source))
-        val sizeText = humanSize(sizeBytes)
-        MaterialAlertDialogBuilder(dialogContext())
-            .setTitle(R.string.import_confirm_title)
-            .setMessage(context.getString(R.string.import_confirm_message, displayName, sizeText))
-            .setPositiveButton(R.string.import_confirm_ok) { _, _ ->
-                startImport(Uri.fromFile(source), displayName)
-            }
-            .setNegativeButton(R.string.key_setup_cancel) { _, _ -> cleanupTempFiles() }
-            .setNeutralButton(R.string.import_confirm_backup) { _, _ -> backupManager.showBackupGuide() }
-            .show()
-    }
-
-    private fun startImport(uri: Uri, displayName: String) {
-        val b = bridge
-        if (b == null) {
-            cleanupTempFiles()
+    /** 主线程：挂流并通知页面执行追加导入；超时兜底见 [timeoutRunnable]。 */
+    private fun startAppend(file: File, displayName: String) {
+        streamHandler.setPending(Uri.fromFile(file), displayName)
+        // 0.2.3：URL 附时间戳查询参数，杜绝 WebView HTTP 缓存命中上一次导入的旧包
+        // （服务端固定路径 current.zip；WebViewAssetLoader 仅按路径匹配，查询串安全）
+        val url = WebViewConfigHelper.IMPORT_STREAM_URL + "?t=" + System.currentTimeMillis()
+        val delivered = bridge?.appendImport(url, displayName) == true
+        if (!delivered) {
+            clearPendingStream()
             ui.toast(context.getString(R.string.import_page_not_ready))
             return
         }
-        streamHandler.setPending(uri, displayName)
-        val delivered = b.deliverImport(WebViewConfigHelper.IMPORT_STREAM_URL, displayName)
+        ui.toast(context.getString(R.string.import_append_start))
+        main.postDelayed(timeoutRunnable, APPEND_TIMEOUT_MS)
+    }
+
+    /**
+     * 页面模块指纹失效（MODULE_NOT_FOUND）时的兜底：走 0.1.x 旧链路——
+     * 当前暂存文件（可能是过滤重建包）投递给官方页面导入入口，官方覆盖式
+     * 导入（页面内确认）。
+     */
+    fun fallbackToLegacyImport() {
+        val b = bridge
+        val name = streamHandler.pendingName()
+        main.removeCallbacks(timeoutRunnable)
+        importing.set(false)
+        if (b == null || name == null) {
+            clearPendingStream()
+            ui.toast(context.getString(R.string.import_page_not_ready))
+            return
+        }
+        val delivered = b.deliverImport(
+            WebViewConfigHelper.IMPORT_STREAM_URL + "?t=" + System.currentTimeMillis(), name
+        )
         if (delivered) {
             ui.toast(context.getString(R.string.import_delivered))
         } else {
-            streamHandler.clear()
-            cleanupTempFiles()
+            clearPendingStream()
             ui.toast(context.getString(R.string.import_page_not_ready))
         }
     }
 
-    // ---------- 临时文件与对话框工具 ----------
+    // ---------- 展示细节 ----------
 
-    private fun trackTemp(file: File) {
-        synchronized(tempFiles) { tempFiles.add(file) }
-    }
-
-    private fun cleanupTempFiles() {
-        val files: List<File>
-        synchronized(tempFiles) {
-            files = ArrayList(tempFiles)
-            tempFiles.clear()
-        }
-        for (file in files) file.delete()
-    }
-
-    private fun canShowUi(): Boolean = !(activity.isFinishing || activity.isDestroyed)
-
-    /**
-     * 对话框专用上下文：applicationContext 不携带 AppCompat/Material3 主题，
-     * MaterialAlertDialogBuilder 构造时会抛 "requires your app theme to be
-     * Theme.AppCompat (or a descendant)"（0.1.4 线上崩溃）。显式包一层应用主题，
-     * 保证任何调用点都拿到合法主题。
-     */
-    private fun dialogContext(): Context =
-        android.view.ContextThemeWrapper(activity, R.style.Theme_DeepSeekAssistant)
-
-    private fun showProgress(messageRes: Int): AlertDialog {
-        val dctx = dialogContext()
-        val pad = (dctx.resources.displayMetrics.density * 24).toInt()
-        val box = LinearLayout(dctx).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(pad, pad, pad, pad)
-        }
-        box.addView(TextView(dctx).apply {
-            setText(messageRes)
-        })
-        box.addView(
-            ProgressBar(dctx),
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = pad / 2 }
-        )
-        val dialog = MaterialAlertDialogBuilder(dctx)
-            .setView(box)
-            .setCancelable(false)
-            .create()
-        if (canShowUi()) dialog.show()
-        return dialog
-    }
-
-    private fun dismissDialog(dialog: AlertDialog?) {
-        try {
-            dialog?.dismiss()
-        } catch (t: Throwable) {
-            // 已被系统回收时忽略
+    /** 列表副标题：消息数 + 更新时间（时间解析失败时原样展示）。 */
+    private fun subtitle(entry: HistoryIndexEntry): String {
+        val formatted = formatUpdatedAt(entry.updatedAt)
+        return if (formatted.isBlank()) {
+            context.getString(R.string.import_item_subtitle_no_time, entry.messageCount)
+        } else {
+            context.getString(R.string.import_item_subtitle_fmt, entry.messageCount, formatted)
         }
     }
 
-    /** ISO 时间戳 → 本地展示（yyyy-MM-dd HH:mm）；解析失败时截断原文。 */
-    private fun formatTimestamp(raw: String): String = try {
+    /** 官方 updated_at 为 UTC ISO-8601；转本地简洁格式，失败回退原串。 */
+    private fun formatUpdatedAt(raw: String): String = try {
         val parsed = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
-        }.parse(raw.take(19)) ?: throw IllegalArgumentException(raw)
+        }.parse(raw) ?: return raw
         SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(parsed)
     } catch (t: Throwable) {
-        raw.take(16).replace('T', ' ')
+        raw
     }
 
-    /** 读取显示名与大小；读不到时用默认名，大小 -1 表示未知。 */
-    private fun describe(uri: Uri): Pair<String, Long> {
-        var name = DEFAULT_NAME
-        var size = -1L
-        try {
-            context.contentResolver
-                .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)
-                ?.use { cursor: Cursor ->
-                    if (cursor.moveToFirst()) {
-                        name = cursor.getString(0) ?: DEFAULT_NAME
-                        size = if (cursor.isNull(1)) -1L else cursor.getLong(1)
-                    }
-                }
-            if (size < 0) {
-                context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
-                    size = pfd.statSize
-                }
-            }
-        } catch (t: Throwable) {
-            // 信息读取失败不阻断流程，交给官方导入器校验
-        }
-        return name to size
+    /** 计数联动：计数文本 + 主按钮「导入所选(N)」实时反映将导入数；N=0 时禁用按钮（防误点）。 */
+    private fun refreshCount(
+        countView: TextView,
+        checked: BooleanArray,
+        total: Int,
+        positiveButton: TextView?
+    ) {
+        val n = checked.count { it }
+        countView.text = context.getString(R.string.import_select_count_fmt, n, total)
+        positiveButton?.text = context.getString(R.string.import_select_ok_fmt, n)
+        positiveButton?.isEnabled = n > 0
     }
 
-    private fun humanSize(bytes: Long): String = when {
-        bytes < 0 -> context.getString(R.string.file_size_kb, 0f)
-        bytes < 1024 -> context.getString(R.string.file_size_bytes, bytes)
-        bytes < 1024 * 1024 -> context.getString(R.string.file_size_kb, bytes / 1024f)
-        else -> context.getString(R.string.file_size_mb, bytes / 1024f / 1024f)
+    private fun selectedIds(entries: List<HistoryIndexEntry>, checked: BooleanArray): List<String> =
+        entries.mapIndexedNotNull { index, entry -> if (checked[index]) entry.id else null }
+
+    private fun deleteTempFiles() {
+        for (file in tempFiles) file.delete()
+        tempFiles.clear()
+    }
+
+    /** 读取所选文件的展示名；读不到时用默认名（不阻断流程）。 */
+    private fun describeName(uri: Uri): String = try {
+        context.contentResolver
+            .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0)?.takeIf { it.isNotBlank() } else null
+            } ?: DEFAULT_NAME
+    } catch (t: Throwable) {
+        DEFAULT_NAME
     }
 
     companion object {
-        private const val TAG = "ImportController"
+        /** 追加导入结果等待上限：官方解析大档案可能较慢，放宽到 5 分钟。 */
+        private const val APPEND_TIMEOUT_MS = 5 * 60 * 1000L
         private const val DEFAULT_NAME = "deepseek_data.zip"
-
-        /** 重建包固定 ASCII 名（X-Import-Filename 头与页面侧展示均安全）。 */
-        const val PARTIAL_EXPORT_NAME = "deepseek_partial_import.zip"
     }
 }

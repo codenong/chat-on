@@ -26,9 +26,15 @@ import java.util.concurrent.atomic.AtomicReference
  */
 class BackupManager(
     private val activity: ComponentActivity,
-    private val context: Context,
     private val ui: ShellUi
 ) {
+
+    /**
+     * 非 UI 用途的 Context（cacheDir/getString），即 [activity] 本身。
+     * 对话框必须直接用 [activity]：Material 组件要求 Activity 主题
+     * （ThemeEnforcement 崩溃防护，见 scripts/check_ui_context.sh 审计）。
+     */
+    private val context: Context get() = activity
 
     private class Session(
         val id: String,

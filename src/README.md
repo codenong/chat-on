@@ -26,7 +26,8 @@
 ```
 
 安装到真机后：首次启动出现引导页 → 设置 API Key（自动调用 `GET /models` 验证后加密保存）
-→ 菜单“导入 DeepSeek 聊天记录”选择网页端导出的 ZIP → 在官方确认框确认 → 回到会话列表续聊。
+→ 菜单“导入 DeepSeek 聊天记录”选择网页端导出的 ZIP → 在勾选对话框选择要导入的对话
+（或点「全部导入」）→ 追加导入完成后回到会话列表续聊（现有对话全部保留）。
 
 重新 vendored 上游（升级或从零）：
 
@@ -47,7 +48,11 @@ app/src/main/
 │   ├── key/KeyVerifier.kt               # GET /models 验证（与上游行为一致）
 │   ├── fileimport/FilePicker.kt         # SAF 系统文件选择器
 │   ├── fileimport/ImportStreamPathHandler.kt  # 导入 ZIP 流式通道（无 Base64 桥接）
-│   ├── fileimport/ImportController.kt   # 导入编排与覆盖确认
+│   ├── fileimport/ArchiveScanner.kt     # 官方导出包扫描（manifest + 会话索引）
+│   ├── fileimport/HistoryIndex.kt       # 会话索引解析与过滤
+│   ├── fileimport/FilteredArchiveBuilder.kt   # 按所选会话过滤重建导出包
+│   ├── fileimport/CheckableLinearLayout.kt    # 会话勾选列表项容器
+│   ├── fileimport/ImportController.kt   # 导入编排：扫描 → 勾选 → 过滤重建 → 追加导入
 │   ├── backup/BackupManager.kt          # 导出备份分块落盘 + 备份说明
 │   ├── ui/KeySetupDialog.kt             # Key 设置（默认隐藏、验证后保存）
 │   ├── ui/OnboardingController.kt       # 首次启动引导
@@ -101,3 +106,27 @@ scripts/fetch_chat_demo.sh               # 固定 commit vendoring 脚本
 
 壳层代码：MIT（见 `LICENSE`）。`app/src/main/assets/chat/` 内含官方 chat-demo 构建产物，
 遵循其自带 MIT License，分发时一并保留。第三方依赖遵循各自许可证。
+
+## 八、版本历史
+
+- **0.2.3（versionCode 10）**：修复「勾选一个却全部导入」误导入事故。根因是对话框
+  默认全选 + 点击反选：用户「点选一个」的直觉操作实际取消该会话，其余 N-1 个全部
+  被导入。修复：默认不选（点谁选谁）；点击挂行自身监听，不再依赖 ListView 点击
+  派发；「导入所选」按钮实时显示将导入数量（如「导入所选（2）」），未勾选时禁用；
+  导入流 URL 附时间戳查询参数，杜绝 WebView 缓存返回上一次导入的旧包。
+- **0.2.2（versionCode 9）**：修复 Material 对话框主题崩溃（ThemeEnforcement
+  "requires Theme.AppCompat"）——0.2.1 的会话选择对话框误用 applicationContext，
+  该 Context 在部分设备上不携带 manifest 应用主题。根治措施：ImportController 与
+  BackupManager 移除多余的 applicationContext 参数，只保留 Activity Context（对话框、
+  布局填充一律用 activity）；新增 `scripts/check_ui_context.sh` 审计全部
+  MaterialAlertDialogBuilder / LayoutInflater.from 调用点并纳入打包前置检查。
+- **0.2.1（versionCode 8）**：恢复 0.1.4 的「会话可选导入」——选 ZIP 后原生扫描官方
+  导出包索引（manifest + chat_session_index.json），弹出勾选对话框（全选/清空/计数，
+  「全部导入」整包直走），按所选会话过滤重建 ZIP 后走 0.2.0 的追加导入链路；
+  兜底旧链路同样投递重建包。帮助页、README 同步更新。
+- **0.2.0（versionCode 7）**：追加导入——页面内直接调用官方解析器与写库函数，
+  跳过官方「清库再搬入」提交；现有对话保留，同 id 会话按导入侧覆盖。模块指纹失效
+  （MODULE_NOT_FOUND）自动回退 0.1.x 官方 UI 链路。该版本重构时误移除了会话勾选，
+  由 0.2.1 恢复。
+- **0.1.4**：选择导入首版（解析索引 → 勾选对话 → 过滤重建 zip → 官方覆盖式导入）。
+- **0.1.0**：首版实现（Key 安全存储、ZIP 投递官方导入器、备份导出落盘、引导与帮助页）。

@@ -69,9 +69,16 @@
     <string name="import_entry_guide_ok">知道了</string>
     <string name="import_entry_timeout">等待导入入口超时（约 3 分钟），本次导入已取消，请重试。</string>
     <string name="import_failed_no_input">页面里没有官方导入入口：请打开页面「设置」的「数据」标签页后重试。</string>
+    <!-- 追加导入（0.2.0）：页面内直接调用官方解析器与写库函数，跳过官方清库提交 -->
+    <string name="import_append_start">正在追加导入：官方解析中，请保持页面打开…</string>
+    <string name="import_append_done_fmt">已追加导入 %1$d 个对话，现有对话均保留；页面即将刷新。</string>
+    <string name="import_append_failed">追加导入失败，请重试。</string>
+    <string name="import_append_format_error">不是有效的官方导出 ZIP（或为旧版格式），已中止导入。</string>
+    <string name="import_append_timeout">追加导入等待超时，已取消，请重试。</string>
+    <string name="import_append_busy">已有导入正在进行，请稍候。</string>
     <string name="import_failed_fetch">读取所选文件失败，请重新选择。</string>
 
-    <!-- 选择导入（0.1.4）：解析官方导出包索引 → 勾选对话 → 过滤重建 zip -->
+    <!-- 选择导入（0.1.4 引入；0.2.1 接入追加链路）：扫描索引 → 勾选对话 → 过滤重建 zip → 追加导入 -->
     <string name="import_scan_progress">正在读取导出包…</string>
     <string name="import_scan_failed">无法读取该导出包：可能不是有效的官方导出文件，或格式不受支持。请重新选择。</string>
     <string name="import_select_title">选择要导入的对话</string>
@@ -79,11 +86,13 @@
     <string name="import_select_none">清空</string>
     <string name="import_select_count_fmt">已选 %1$d / %2$d</string>
     <string name="import_select_ok">导入所选</string>
+    <string name="import_select_ok_fmt">导入所选（%1$d）</string>
     <string name="import_select_full">全部导入</string>
     <string name="import_select_empty">请先勾选至少一个对话。</string>
     <string name="import_select_untitled">（未命名对话）</string>
     <string name="import_item_subtitle_fmt">%1$d 条消息 · 更新于 %2$s</string>
-    <string name="import_selective_confirm_message">即将导入所选 %1$d 个对话（共 %2$d 条消息）。\n\n注意：官方导入器会用本包内容替换本机全部现有聊天记录——未被选中的对话不会保留。建议先备份现有数据。\n\n确认后开始生成导入包并导入。</string>
+    <string name="import_item_subtitle_no_time">%1$d 条消息</string>
+    <string name="import_selective_confirm_message">即将追加导入所选 %1$d 个对话（共 %2$d 条消息）。\n\n追加导入不清除本机现有对话；与本机同源的对话（id 相同）会以导入内容覆盖。建议先备份现有数据。\n\n确认后开始生成导入包并导入。</string>
     <string name="import_rebuild_progress">正在生成导入包…</string>
     <string name="import_rebuild_failed">生成导入包失败，请重试，或改用「全部导入」。</string>
     <string name="file_size_bytes">%1$d B</string>

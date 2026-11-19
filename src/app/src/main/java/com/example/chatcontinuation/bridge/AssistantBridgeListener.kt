@@ -85,17 +85,24 @@ class AssistantBridgeListener(
     }
 
     /**
-     * 页面导入结果（0.1.3 协议）：
-     * - ok=true：官方导入器已接管并在页面内展示状态，原生不重复提示；
-     * - NO_INPUT_YET：入口未挂载，文件已暂存、页面在轮询等待 → 弹完整指引对话框；
+     * 页面导入结果（0.2.0 协议）：
+     * - ok=true + APPENDED：追加导入完成（count 个对话并入现网库），提示后页面自刷新；
+     * - ok=true（无 code）：旧链路已投递官方导入器，页面内自行展示状态；
+     * - MODULE_NOT_FOUND：页面更新导致官方模块定位失败 → 回退旧官方 UI 流程；
+     * - BACKUP_* / STAGE_EMPTY：官方校验拒绝（无效/旧版导出包）→ 格式错误提示；
+     * - NO_INPUT_YET：旧链路入口未挂载，文件已暂存、页面在轮询 → 弹完整指引；
      * - 其余为最终失败：释放暂存流并提示。
      */
     private fun onImportResult(json: JSONObject) {
+        val code = json.optString("code")
         if (json.optBoolean("ok")) {
             importController.clearPendingStream()
+            if (code == CODE_APPENDED) {
+                ui.toast(context.getString(R.string.import_append_done_fmt, json.optInt("count", 0)))
+            }
             return
         }
-        when (json.optString("code")) {
+        when (code) {
             CODE_NO_INPUT_YET -> ui.showImportEntryGuide()
 
             CODE_INPUT_TIMEOUT -> {
@@ -108,9 +115,21 @@ class AssistantBridgeListener(
                 ui.toast(context.getString(R.string.import_failed_no_input))
             }
 
+            CODE_MODULE_NOT_FOUND -> importController.fallbackToLegacyImport()
+
+            CODE_APPEND_BUSY -> ui.toast(context.getString(R.string.import_append_busy))
+
             else -> {
                 importController.clearPendingStream()
-                ui.toast(context.getString(R.string.import_failed_fetch))
+                val msg = when {
+                    code.startsWith("BACKUP_") || code == CODE_STAGE_EMPTY ->
+                        context.getString(R.string.import_append_format_error)
+                    code.startsWith("FETCH_") ->
+                        context.getString(R.string.import_failed_fetch)
+                    else ->
+                        context.getString(R.string.import_append_failed)
+                }
+                ui.toast(msg)
             }
         }
     }
@@ -134,6 +153,21 @@ class AssistantBridgeListener(
         postIfReady(
             JSONObject().apply {
                 put("type", MSG_DELIVER_IMPORT)
+                put("url", url)
+                put("name", fileName)
+            }.toString()
+        )
+
+    /**
+     * 通知页面执行追加导入（0.2.0）：页面直接调用官方解析器与官方写库函数，
+     * 跳过官方清库提交 → 现有对话保留。结果经 importResult 回报
+     * （code=APPENDED + count，或 MODULE_NOT_FOUND / BACKUP_* / STAGE_EMPTY / FETCH_*）。
+     * @return false 表示页面尚未就绪，调用方应回滚。
+     */
+    fun appendImport(url: String, fileName: String): Boolean =
+        postIfReady(
+            JSONObject().apply {
+                put("type", MSG_APPEND_IMPORT)
                 put("url", url)
                 put("name", fileName)
             }.toString()
@@ -164,6 +198,7 @@ class AssistantBridgeListener(
         const val MSG_PICK_IMPORT = "pickImport"
         const val MSG_KEY_VALUE = "keyValue"
         const val MSG_DELIVER_IMPORT = "deliverImport"
+        const val MSG_APPEND_IMPORT = "appendImport"
         const val MSG_EXPORT_START = "exportStart"
         const val MSG_EXPORT_CHUNK = "exportChunk"
         const val MSG_EXPORT_END = "exportEnd"
@@ -173,5 +208,9 @@ class AssistantBridgeListener(
         const val CODE_NO_INPUT_YET = "NO_INPUT_YET"
         const val CODE_INPUT_TIMEOUT = "INPUT_TIMEOUT"
         const val CODE_NO_FILE_INPUT = "NO_FILE_INPUT"
+        const val CODE_APPENDED = "APPENDED"
+        const val CODE_MODULE_NOT_FOUND = "MODULE_NOT_FOUND"
+        const val CODE_STAGE_EMPTY = "STAGE_EMPTY"
+        const val CODE_APPEND_BUSY = "APPEND_BUSY"
     }
 }

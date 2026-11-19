@@ -62,8 +62,8 @@ class MainActivity : AppCompatActivity(), ShellUi {
         streamHandler = ImportStreamPathHandler(this)
         val assetLoader = WebViewConfig.buildAssetLoader(applicationContext, streamHandler)
 
-        backupManager = BackupManager(this, applicationContext, this)
-        importController = ImportController(this, applicationContext, streamHandler, backupManager, this)
+        backupManager = BackupManager(this, this)
+        importController = ImportController(this, streamHandler, backupManager, this)
         bridgeListener = AssistantBridgeListener(
             applicationContext, secureKeyStore, importController, backupManager, this
         )

@@ -28,6 +28,9 @@ class ImportStreamPathHandler(private val context: Context) : WebViewAssetLoader
         pending.set(PendingImport(uri, displayName))
     }
 
+    /** 当前待导入文件的展示名；无暂存流时为 null（旧链路兜底判断用）。 */
+    fun pendingName(): String? = pending.get()?.displayName
+
     fun clear() {
         pending.set(null)
     }
