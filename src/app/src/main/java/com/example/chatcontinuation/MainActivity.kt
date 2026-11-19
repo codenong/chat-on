@@ -11,6 +11,7 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.webkit.ScriptHandler
 import androidx.webkit.WebViewCompat
 import com.example.chatcontinuation.backup.BackupManager
 import com.example.chatcontinuation.bridge.AssistantBridgeListener
@@ -39,6 +40,7 @@ class MainActivity : AppCompatActivity(), ShellUi {
     private lateinit var importController: ImportController
     private lateinit var bridgeListener: AssistantBridgeListener
     private lateinit var onboarding: OnboardingController
+    private var docStartScriptHandler: ScriptHandler? = null
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -83,12 +85,7 @@ class MainActivity : AppCompatActivity(), ShellUi {
                 setOf(WebViewConfigHelper.TRUSTED_ORIGIN),
                 bridgeListener
             )
-            val script = DocumentStartScript.build(applicationContext, secureKeyStore)
-            WebViewCompat.addDocumentStartJavaScript(
-                webView,
-                script,
-                setOf(WebViewConfigHelper.TRUSTED_ORIGIN)
-            )
+            refreshDocumentStartScript()
         } catch (t: Throwable) {
             LogRedactor.w(TAG, "webview bridge setup failed: ${t.javaClass.simpleName}")
         }
@@ -214,7 +211,10 @@ class MainActivity : AppCompatActivity(), ShellUi {
     }
 
     override fun showKeySetupDialog() {
-        KeySetupDialog.show(this, secureKeyStore) { onKeyChanged() }
+        KeySetupDialog.show(this, secureKeyStore) {
+            onKeyChanged()
+            webView.reload()
+        }
     }
 
     /** 导入入口未打开：完整指引（暂存等待 + 页面设置路径 + 页面内按钮替代路径）。 */
@@ -246,6 +246,24 @@ class MainActivity : AppCompatActivity(), ShellUi {
 
     override fun onKeyChanged() {
         onboarding.refreshKeyStatus()
+        refreshDocumentStartScript()
+        if (::bridgeListener.isInitialized) {
+            bridgeListener.sendKey()
+        }
+    }
+
+    private fun refreshDocumentStartScript() {
+        try {
+            docStartScriptHandler?.remove()
+            val script = DocumentStartScript.build(applicationContext, secureKeyStore)
+            docStartScriptHandler = WebViewCompat.addDocumentStartJavaScript(
+                webView,
+                script,
+                setOf(WebViewConfigHelper.TRUSTED_ORIGIN)
+            )
+        } catch (t: Throwable) {
+            LogRedactor.w(TAG, "document-start script refresh failed: ${t.javaClass.simpleName}")
+        }
     }
 
     // ---------- 内部 ----------
