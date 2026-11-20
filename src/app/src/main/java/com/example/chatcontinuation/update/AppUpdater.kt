@@ -61,6 +61,10 @@ object AppUpdater {
             }
             return
         }
+        LogRedactor.i(
+            TAG,
+            "checkForUpdate start: silent=$silent, localVersionCode=${BuildConfig.VERSION_CODE}, localVersionName=${BuildConfig.VERSION_NAME}"
+        )
         if (!silent) {
             toast(activity, activity.getString(R.string.update_checking))
         }
@@ -75,6 +79,10 @@ object AppUpdater {
                         }
                         return@runOnUiThread
                     }
+                    LogRedactor.i(
+                        TAG,
+                        "compare version: remote=${release.versionCode} (${release.versionName}), local=${BuildConfig.VERSION_CODE}"
+                    )
                     if (release.versionCode > BuildConfig.VERSION_CODE) {
                         showUpgradeDialog(activity, release)
                     } else if (!silent) {
@@ -85,7 +93,7 @@ object AppUpdater {
                     }
                 }
             } catch (t: Throwable) {
-                LogRedactor.w(TAG, "update check failed: ${t.javaClass.simpleName}")
+                LogRedactor.w(TAG, "update check failed: ${t.javaClass.simpleName}: ${t.message}")
                 if (!silent) {
                     activity.runOnUiThread {
                         if (!activity.isFinishing && !activity.isDestroyed) {
@@ -192,6 +200,7 @@ object AppUpdater {
 
     private fun fetchManifest(): ReleaseInfo? {
         val url = "$MANIFEST_URL?t=${System.currentTimeMillis()}"
+        LogRedactor.i(TAG, "fetching manifest: $url")
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             useCaches = false
@@ -203,6 +212,7 @@ object AppUpdater {
         }
         try {
             val code = conn.responseCode
+            LogRedactor.i(TAG, "manifest HTTP status: $code")
             if (code == HttpURLConnection.HTTP_NOT_FOUND) return null
             if (code !in 200..299) {
                 throw IllegalStateException("HTTP $code")
@@ -211,9 +221,16 @@ object AppUpdater {
             val json = JSONObject(body)
             val versionCode = json.optInt("versionCode", -1)
             val rawApkUrl = json.optString("apkUrl").trim()
-            if (versionCode <= 0 || rawApkUrl.isEmpty()) return null
+            if (versionCode <= 0 || rawApkUrl.isEmpty()) {
+                LogRedactor.w(TAG, "manifest invalid: versionCode=$versionCode, rawApkUrlEmpty=${rawApkUrl.isEmpty()}")
+                return null
+            }
             val resolvedUrl = URL(URL(MANIFEST_URL), rawApkUrl).toString()
-            if (!resolvedUrl.startsWith("https://")) return null
+            if (!resolvedUrl.startsWith("https://")) {
+                LogRedactor.w(TAG, "manifest rejected non-https apkUrl: $resolvedUrl")
+                return null
+            }
+            LogRedactor.i(TAG, "manifest parsed: versionCode=$versionCode, apkUrl=$resolvedUrl")
             return ReleaseInfo(
                 versionCode = versionCode,
                 versionName = json.optString("versionName").trim(),
