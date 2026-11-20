@@ -127,6 +127,10 @@
         memKey = msg.value ? String(msg.value) : null;
         syncBrandFromKey();
         break;
+      case 'updateStatus':
+        hasAppUpdate = !!msg.hasUpdate;
+        renderUpdateDots();
+        break;
       case 'deliverImport':
         deliverImport(msg.url, msg.name);
         break;
@@ -689,16 +693,80 @@
         postToNative({ type: 'openMenu' });
       }, true);
       parent.insertBefore(clone, settingsItem);
+      renderUpdateDots();
     } finally {
       isInjectingMenu = false;
     }
   }
 
+  var hasAppUpdate = false;
+  var isUpdatingDots = false;
+
+  function createRedDot(role) {
+    var dot = document.createElement('span');
+    dot.setAttribute('data-ds-update-dot', role);
+    dot.style.display = 'inline-block';
+    dot.style.width = '8px';
+    dot.style.height = '8px';
+    dot.style.borderRadius = '50%';
+    dot.style.backgroundColor = '#ef4444';
+    dot.style.pointerEvents = 'none';
+    dot.style.flexShrink = '0';
+    return dot;
+  }
+
+  function findTopLeftMenuToggle() {
+    var buttons = document.querySelectorAll('button');
+    for (var i = 0; i < buttons.length; i++) {
+      var btn = buttons[i];
+      if (btn.closest('[data-ds-native-menu="1"]')) continue;
+      var rect = btn.getBoundingClientRect ? btn.getBoundingClientRect() : null;
+      if (!rect || rect.width <= 0 || rect.height <= 0) continue;
+      if (rect.top < 80 && rect.left < 80) return btn;
+    }
+    return null;
+  }
+
+  function renderUpdateDots() {
+    if (isUpdatingDots || !document.body) return;
+    isUpdatingDots = true;
+    try {
+      var existing = document.querySelectorAll('[data-ds-update-dot]');
+      if (!hasAppUpdate) {
+        for (var i = 0; i < existing.length; i++) {
+          if (existing[i].parentNode) existing[i].parentNode.removeChild(existing[i]);
+        }
+        return;
+      }
+      var toggleBtn = findTopLeftMenuToggle();
+      if (toggleBtn && !toggleBtn.querySelector('[data-ds-update-dot="toggle"]')) {
+        if (getComputedStyle(toggleBtn).position === 'static') {
+          toggleBtn.style.position = 'relative';
+        }
+        var tDot = createRedDot('toggle');
+        tDot.style.position = 'absolute';
+        tDot.style.top = '4px';
+        tDot.style.right = '4px';
+        toggleBtn.appendChild(tDot);
+      }
+      var menuItem = document.querySelector('[data-ds-native-menu="1"]');
+      if (menuItem && !menuItem.querySelector('[data-ds-update-dot="menu"]')) {
+        var mDot = createRedDot('menu');
+        mDot.style.marginLeft = 'auto';
+        menuItem.appendChild(mDot);
+      }
+    } finally {
+      isUpdatingDots = false;
+    }
+  }
+
   function initMenuObserver() {
     ensureImportAssistantMenuItem();
+    renderUpdateDots();
     if (!document.body || menuObserver) return;
     menuObserver = new MutationObserver(function () {
       if (!isInjectingMenu) ensureImportAssistantMenuItem();
+      if (!isUpdatingDots) renderUpdateDots();
     });
     menuObserver.observe(document.body, { childList: true, subtree: true });
   }

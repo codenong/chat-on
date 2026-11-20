@@ -4,6 +4,9 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
@@ -103,7 +106,11 @@ class MainActivity : AppCompatActivity(), ShellUi {
 
 
         onboarding.attachIfNeeded(findViewById(R.id.onboarding_slot))
-        AppUpdater.checkForUpdate(this, silent = true)
+        AppUpdater.checkForUpdate(this, silent = true) { available ->
+            if (::bridgeListener.isInitialized) {
+                bridgeListener.sendUpdateStatus(available != null)
+            }
+        }
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -170,7 +177,12 @@ class MainActivity : AppCompatActivity(), ShellUi {
             openHelpPage(HelpPage.PRIVACY); true
         }
         R.id.action_check_update -> {
-            AppUpdater.checkForUpdate(this, silent = false); true
+            AppUpdater.checkForUpdate(this, silent = false) { available ->
+                if (::bridgeListener.isInitialized) {
+                    bridgeListener.sendUpdateStatus(available != null)
+                }
+            }
+            true
         }
         R.id.action_about -> {
             showAbout(); true
@@ -182,7 +194,12 @@ class MainActivity : AppCompatActivity(), ShellUi {
 
     override fun showMainMenu() {
         mainHandler.post {
-            val items = arrayOf(
+            val updateLabel: CharSequence = if (AppUpdater.hasPendingUpdate()) {
+                withRedDot(getString(R.string.menu_check_update))
+            } else {
+                getString(R.string.menu_check_update)
+            }
+            val items: Array<Pair<CharSequence, Int>> = arrayOf(
                 getString(R.string.menu_setup_key) to R.id.action_setup_key,
                 getString(R.string.menu_import) to R.id.action_import,
                 getString(R.string.menu_backup_guide) to R.id.action_backup_guide,
@@ -190,7 +207,7 @@ class MainActivity : AppCompatActivity(), ShellUi {
                 getString(R.string.menu_help_apikey) to R.id.action_help_apikey,
                 getString(R.string.menu_help_import) to R.id.action_help_import,
                 getString(R.string.menu_privacy) to R.id.action_privacy,
-                getString(R.string.menu_check_update) to R.id.action_check_update,
+                updateLabel to R.id.action_check_update,
                 getString(R.string.menu_about) to R.id.action_about,
             )
             val labels = items.map { it.first }.toTypedArray()
@@ -243,14 +260,35 @@ class MainActivity : AppCompatActivity(), ShellUi {
             BuildConfig.VERSION_NAME,
             readVendoredCommit()
         )
+        val checkLabel: CharSequence = if (AppUpdater.hasPendingUpdate()) {
+            withRedDot(getString(R.string.menu_check_update))
+        } else {
+            getString(R.string.menu_check_update)
+        }
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.about_title)
             .setMessage(message)
             .setPositiveButton(R.string.key_setup_cancel, null)
-            .setNeutralButton(R.string.menu_check_update) { _, _ ->
-                AppUpdater.checkForUpdate(this, silent = false)
+            .setNeutralButton(checkLabel) { _, _ ->
+                AppUpdater.checkForUpdate(this, silent = false) { available ->
+                    if (::bridgeListener.isInitialized) {
+                        bridgeListener.sendUpdateStatus(available != null)
+                    }
+                }
             }
             .show()
+    }
+
+    private fun withRedDot(label: String): CharSequence {
+        val text = "$label  ●"
+        return SpannableString(text).apply {
+            setSpan(
+                ForegroundColorSpan(0xFFEF4444.toInt()),
+                text.length - 1,
+                text.length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
     }
 
     override fun onKeyChanged() {

@@ -45,6 +45,13 @@ object AppUpdater {
 
     private val checking = AtomicBoolean(false)
 
+    @Volatile
+    var pendingRelease: ReleaseInfo? = null
+        private set
+
+    fun hasPendingUpdate(): Boolean =
+        pendingRelease?.let { it.versionCode > BuildConfig.VERSION_CODE } == true
+
     data class ReleaseInfo(
         val versionCode: Int,
         val versionName: String,
@@ -54,7 +61,18 @@ object AppUpdater {
         val releaseNotes: String,
     )
 
-    fun checkForUpdate(activity: AppCompatActivity, silent: Boolean) {
+    fun checkForUpdate(
+        activity: AppCompatActivity,
+        silent: Boolean,
+        onStatusChanged: ((ReleaseInfo?) -> Unit)? = null
+    ) {
+        if (!silent) {
+            val cached = pendingRelease
+            if (cached != null && cached.versionCode > BuildConfig.VERSION_CODE) {
+                showUpgradeDialog(activity, cached)
+                return
+            }
+        }
         if (!checking.compareAndSet(false, true)) {
             if (!silent) {
                 toast(activity, activity.getString(R.string.update_checking))
@@ -71,25 +89,32 @@ object AppUpdater {
         Thread {
             try {
                 val release = fetchManifest()
-                activity.runOnUiThread {
-                    if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
-                    if (release == null) {
-                        if (!silent) {
-                            toast(activity, activity.getString(R.string.update_no_release))
-                        }
-                        return@runOnUiThread
-                    }
+                if (release != null) {
                     LogRedactor.i(
                         TAG,
                         "compare version: remote=${release.versionCode} (${release.versionName}), local=${BuildConfig.VERSION_CODE}"
                     )
-                    if (release.versionCode > BuildConfig.VERSION_CODE) {
-                        showUpgradeDialog(activity, release)
-                    } else if (!silent) {
-                        toast(
-                            activity,
-                            activity.getString(R.string.update_already_latest, BuildConfig.VERSION_NAME)
-                        )
+                }
+                val available = if (release != null && release.versionCode > BuildConfig.VERSION_CODE) {
+                    release
+                } else {
+                    null
+                }
+                pendingRelease = available
+                activity.runOnUiThread {
+                    if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
+                    onStatusChanged?.invoke(available)
+                    if (!silent) {
+                        if (available != null) {
+                            showUpgradeDialog(activity, available)
+                        } else if (release == null) {
+                            toast(activity, activity.getString(R.string.update_no_release))
+                        } else {
+                            toast(
+                                activity,
+                                activity.getString(R.string.update_already_latest, BuildConfig.VERSION_NAME)
+                            )
+                        }
                     }
                 }
             } catch (t: Throwable) {

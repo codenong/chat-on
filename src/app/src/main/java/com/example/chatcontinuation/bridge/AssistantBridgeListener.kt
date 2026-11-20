@@ -52,7 +52,10 @@ class AssistantBridgeListener(
             return
         }
         when (json.optString("type")) {
-            MSG_READY -> LogRedactor.i(TAG, "bridge: page ready")
+            MSG_READY -> {
+                LogRedactor.i(TAG, "bridge: page ready")
+                sendUpdateStatus(cachedHasUpdate)
+            }
 
             MSG_GET_KEY -> sendKey()
 
@@ -189,6 +192,20 @@ class AssistantBridgeListener(
         postIfReady(payload)
     }
 
+    @Volatile
+    private var cachedHasUpdate = false
+
+    /** 通知页面在菜单按钮与「导入助手」项上显示/隐藏更新红点。 */
+    fun sendUpdateStatus(hasUpdate: Boolean) {
+        cachedHasUpdate = hasUpdate
+        postIfReady(
+            JSONObject().apply {
+                put("type", MSG_UPDATE_STATUS)
+                put("hasUpdate", hasUpdate)
+            }.toString()
+        )
+    }
+
     companion object {
         private const val TAG = "AssistantBridge"
 
@@ -199,6 +216,7 @@ class AssistantBridgeListener(
         const val MSG_PICK_IMPORT = "pickImport"
         const val MSG_OPEN_MENU = "openMenu"
         const val MSG_KEY_VALUE = "keyValue"
+        const val MSG_UPDATE_STATUS = "updateStatus"
         const val MSG_DELIVER_IMPORT = "deliverImport"
         const val MSG_APPEND_IMPORT = "appendImport"
         const val MSG_EXPORT_START = "exportStart"
