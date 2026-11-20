@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DeepSeek API 申请图文与视频指南</title>
+  <!-- 引入 Marked.js Markdown 渲染器 -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- 引入 Highlight.js 代码高亮 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/highlight.min.js"></script>
+  <style>
+    :root {
+      --bg-color: #f8fafc;
+      --card-bg: #ffffff;
+      --text-main: #1e293b;
+      --text-muted: #64748b;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --border-color: #e2e8f0;
+      --quote-bg: #eff6ff;
+      --quote-border: #3b82f6;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      line-height: 1.75;
+      padding: 24px 16px 64px;
+    }
+
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    header h1 {
+      font-size: 1.85rem;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 8px;
+    }
+
+    header p {
+      color: var(--text-muted);
+      font-size: 0.98rem;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      box-shadow: 0 4px 20px rgba(15, 23, 42, 0.04);
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+
+    .section-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #dbeafe;
+      color: #1e40af;
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 999px;
+      margin-bottom: 14px;
+    }
+
+    /* 16:9 响应式视频容器 */
+    .video-wrapper {
+      position: relative;
+      width: 100%;
+      padding-top: 56.25%;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #000;
+    }
+
+    .video-wrapper iframe {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+    }
+
+    .video-link-bar {
+      margin-top: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    .video-link-bar a {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .video-link-bar a:hover {
+      text-decoration: underline;
+    }
+
+    /* Markdown 渲染样式 */
+    .markdown-body h1 {
+      font-size: 1.65rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 10px;
+      margin-bottom: 16px;
+      color: #0f172a;
+    }
+
+    .markdown-body h2 {
+      font-size: 1.35rem;
+      margin-top: 24px;
+      margin-bottom: 14px;
+      color: #0f172a;
+    }
+
+    .markdown-body h3 {
+      font-size: 1.12rem;
+      margin-top: 20px;
+      margin-bottom: 8px;
+      color: #1e3a8a;
+    }
+
+    .markdown-body p {
+      margin-bottom: 12px;
+    }
+
+    .markdown-body ul, .markdown-body ol {
+      padding-left: 24px;
+      margin-bottom: 14px;
+    }
+
+    .markdown-body li {
+      margin-bottom: 6px;
+    }
+
+    .markdown-body hr {
+      border: 0;
+      border-top: 1px solid var(--border-color);
+      margin: 20px 0;
+    }
+
+    .markdown-body a {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .markdown-body a:hover {
+      text-decoration: underline;
+    }
+
+    .markdown-body blockquote {
+      background: var(--quote-bg);
+      border-left: 4px solid var(--quote-border);
+      padding: 12px 16px;
+      border-radius: 0 8px 8px 0;
+      margin: 14px 0;
+      color: #1e3a8a;
+    }
+
+    .markdown-body blockquote p:last-child,
+    .markdown-body blockquote ul:last-child {
+      margin-bottom: 0;
+    }
+
+    .markdown-body code {
+      background: #f1f5f9;
+      color: #dc2626;
+      padding: 2px 6px;
+      border-radius: 5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.9em;
+    }
+
+    .markdown-body pre {
+      background: #0d1117;
+      border-radius: 10px;
+      padding: 16px;
+      overflow-x: auto;
+      margin: 14px 0;
+    }
+
+    .markdown-body pre code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+      font-size: 0.88rem;
+    }
+
+    .cta-box {
+      text-align: center;
+      margin-top: 24px;
+    }
+
+    .btn-primary {
+      display: inline-block;
+      background: var(--primary);
+      color: #fff;
+      font-weight: 600;
+      padding: 12px 28px;
+      border-radius: 8px;
+      text-decoration: none;
+      transition: background 0.2s;
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-hover);
+    }
+
+    footer {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      margin-top: 32px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>DeepSeek API 申请教程</h1>
+      <p>高性价比大模型接口快速接入指南（视频 + 图文详解）</p>
+    </header>
+
+    <!-- 顶部：B站视频步骤 -->
+    <section class="card">
+      <div class="section-badge">🎬 视频演示步骤</div>
+      <div class="video-wrapper">
+        <iframe
+          src="//player.bilibili.com/player.html?bvid=BV1BgnN6YEr9&page=1&high_quality=1&danmaku=0"
+          scrolling="no"
+          border="0"
+          frameborder="no"
+          framespacing="0"
+          allowfullscreen="true"
+          sandbox="allow-top-navigation allow-same-origin allow-forms allow-scripts">
+        </iframe>
+      </div>
+      <div class="video-link-bar">
+        <span>如果视频无法加载，可直接前往 Bilibili 观看原视频</span>
+        <a href="https://www.bilibili.com/video/BV1BgnN6YEr9/" target="_blank" rel="noopener noreferrer">
+          打开 Bilibili 视频 (BV1BgnN6YEr9) ↗
+        </a>
+      </div>
+    </section>
+
+    <!-- 下方：Markdown 渲染图文步骤 -->
+    <section class="card">
+      <div class="section-badge">📖 图文操作步骤</div>
+      <div id="markdown-content" class="markdown-body">正在加载教程内容...</div>
+      <div class="cta-box">
+        <a class="btn-primary" href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer">
+          前往 DeepSeek 开放平台申请 ↗
+        </a>
+      </div>
+    </section>
+
+    <footer>
+      Powered by Markdown &amp; Marked.js · Deployed on Cloudflare Pages
+    </footer>
+  </div>
+
+  <!-- 内置兜底 Markdown 文本（确保本地直接双击打开 index.html 时不受 file:// CORS 限制也能正常渲染） -->
+  <script id="fallback-markdown" type="text/markdown">
+# DeepSeek API 申请
+
+**DeepSeek（深度求索）** 提供了高性价比的大模型服务。
+
+## 申请步骤
+
+### 1. 注册 / 登录
+访问 [DeepSeek 开放平台](https://platform.deepseek.com/) 并登录账号。
+
+### 2. 进入 API Keys 页面
+在左侧菜单栏点击 **"API Keys"**。
+
+### 3. 创建 Key
+点击 **"创建 API Key"** 按钮，输入名称（如 `"VocoType"`），然后点击创建。
+
+### 4. 复制 Key
+创建成功后，请立即复制生成的 API Key（以 `sk-` 开头）。
+
+> ⚠️ **注意**：Key **只会显示一次**，请妥善保存，切勿泄露。
+
+---
+
+## 快速调用示例 (cURL)
+
+```bash
+curl https://api.deepseek.com/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-你的API_KEY" \
+  -d '{
+        "model": "deepseek-chat",
+        "messages": [
+          {"role": "system", "content": "You are a helpful assistant."},
+          {"role": "user", "content": "你好，DeepSeek！"}
+        ],
+        "stream": false
+      }'
+```
+  </script>
+
+  <script>
+    // 配置 Marked 渲染器
+    marked.setOptions({
+      breaks: true,
+      gfm: true,
+      highlight: function (code, lang) {
+        if (lang && hljs.getLanguage(lang)) {
+          return hljs.highlight(code, { language: lang }).value;
+        }
+        return hljs.highlightAuto(code).value;
+      }
+    });
+
+    function renderMarkdown(mdText) {
+      const container = document.getElementById('markdown-content');
+      container.innerHTML = marked.parse(mdText);
+      // 为所有外部链接添加新标签页打开属性
+      container.querySelectorAll('a').forEach(link => {
+        link.setAttribute('target', '_blank');
+        link.setAttribute('rel', 'noopener noreferrer');
+      });
+    }
+
+    // 优先通过 fetch 加载同目录下的 guide.md（部署在 Cloudflare Pages 上时生效）
+    // 若本地直接双击打开导致 fetch 失败，则自动使用内嵌的 fallback-markdown 渲染
+    fetch('./guide.md')
+      .then(response => {
+        if (!response.ok) throw new Error('Network response was not ok');
+        return response.text();
+      })
+      .then(text => renderMarkdown(text))
+      .catch(() => {
+        const fallback = document.getElementById('fallback-markdown').textContent;
+        renderMarkdown(fallback);
+      });
+  </script>
+</body>
+</html>

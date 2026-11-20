@@ -24,6 +24,7 @@ import com.example.chatcontinuation.ui.KeySetupDialog
 import com.example.chatcontinuation.ui.OnboardingController
 import com.example.chatcontinuation.ui.ShellUi
 import com.example.chatcontinuation.ui.WebViewConfigHelper
+import com.example.chatcontinuation.update.AppUpdater
 import com.example.chatcontinuation.util.LogRedactor
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
@@ -102,6 +103,7 @@ class MainActivity : AppCompatActivity(), ShellUi {
 
 
         onboarding.attachIfNeeded(findViewById(R.id.onboarding_slot))
+        AppUpdater.checkForUpdate(this, silent = true)
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -167,6 +169,9 @@ class MainActivity : AppCompatActivity(), ShellUi {
         R.id.action_privacy -> {
             openHelpPage(HelpPage.PRIVACY); true
         }
+        R.id.action_check_update -> {
+            AppUpdater.checkForUpdate(this, silent = false); true
+        }
         R.id.action_about -> {
             showAbout(); true
         }
@@ -185,6 +190,7 @@ class MainActivity : AppCompatActivity(), ShellUi {
                 getString(R.string.menu_help_apikey) to R.id.action_help_apikey,
                 getString(R.string.menu_help_import) to R.id.action_help_import,
                 getString(R.string.menu_privacy) to R.id.action_privacy,
+                getString(R.string.menu_check_update) to R.id.action_check_update,
                 getString(R.string.menu_about) to R.id.action_about,
             )
             val labels = items.map { it.first }.toTypedArray()
@@ -241,6 +247,9 @@ class MainActivity : AppCompatActivity(), ShellUi {
             .setTitle(R.string.about_title)
             .setMessage(message)
             .setPositiveButton(R.string.key_setup_cancel, null)
+            .setNeutralButton(R.string.menu_check_update) { _, _ ->
+                AppUpdater.checkForUpdate(this, silent = false)
+            }
             .show()
     }
 
