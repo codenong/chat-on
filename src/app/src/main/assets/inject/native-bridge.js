@@ -720,9 +720,11 @@
     for (var i = 0; i < buttons.length; i++) {
       var btn = buttons[i];
       if (btn.closest('[data-ds-native-menu="1"]')) continue;
+      if ((btn.textContent || '').trim() !== '') continue;
+      if (!btn.querySelector('svg')) continue;
       var rect = btn.getBoundingClientRect ? btn.getBoundingClientRect() : null;
       if (!rect || rect.width <= 0 || rect.height <= 0) continue;
-      if (rect.top < 80 && rect.left < 80) return btn;
+      if (rect.width <= 60 && rect.height <= 60 && rect.top < 80 && rect.left < 80) return btn;
     }
     return null;
   }
@@ -739,6 +741,12 @@
         return;
       }
       var toggleBtn = findTopLeftMenuToggle();
+      var oldToggleDots = document.querySelectorAll('[data-ds-update-dot="toggle"]');
+      for (var j = 0; j < oldToggleDots.length; j++) {
+        if (!toggleBtn || !toggleBtn.contains(oldToggleDots[j])) {
+          if (oldToggleDots[j].parentNode) oldToggleDots[j].parentNode.removeChild(oldToggleDots[j]);
+        }
+      }
       if (toggleBtn && !toggleBtn.querySelector('[data-ds-update-dot="toggle"]')) {
         if (getComputedStyle(toggleBtn).position === 'static') {
           toggleBtn.style.position = 'relative';
