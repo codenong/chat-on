@@ -258,7 +258,7 @@ class MainActivity : AppCompatActivity(), ShellUi {
             R.string.about_format,
             getString(R.string.app_name),
             BuildConfig.VERSION_NAME,
-            readVendoredCommit()
+            "${readVendoredCommit()}\n源码 commit：${BuildConfig.GIT_COMMIT}"
         )
         val checkLabel: CharSequence = if (AppUpdater.hasPendingUpdate()) {
             withRedDot(getString(R.string.menu_check_update))

@@ -14,6 +14,27 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+fun gitCommitHash(): String = try {
+    val proc = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
+        .directory(rootProject.projectDir)
+        .redirectErrorStream(true)
+        .start()
+    val hash = proc.inputStream.bufferedReader().readText().trim()
+    if (proc.waitFor() == 0 && hash.isNotEmpty()) {
+        val dirtyProc = ProcessBuilder("git", "status", "--porcelain")
+            .directory(rootProject.projectDir)
+            .redirectErrorStream(true)
+            .start()
+        val dirty = dirtyProc.inputStream.bufferedReader().readText().isNotBlank()
+        dirtyProc.waitFor()
+        if (dirty) "$hash-dirty" else hash
+    } else {
+        System.getenv("GITHUB_SHA")?.take(7) ?: "unknown"
+    }
+} catch (_: Throwable) {
+    System.getenv("GITHUB_SHA")?.take(7) ?: "unknown"
+}
+
 android {
     namespace = "com.example.chatcontinuation"
     compileSdk = 35
@@ -26,6 +47,7 @@ android {
         targetSdk = 35
         versionCode = 16
         versionName = "0.2.9"
+        buildConfigField("String", "GIT_COMMIT", "\"${gitCommitHash()}\"")
         resourceConfigurations += listOf("zh", "en")
     }
 
